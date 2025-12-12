@@ -1,21 +1,29 @@
 # =============================================================================
-# Job Ops - Unified Docker Image
-# Contains: Orchestrator (Node.js), Job Crawler, Resume Generator (Python/Playwright)
+# Job Ops - Slim Docker Image
+# Only includes Firefox (for Camoufox) - much smaller than full Playwright
 # =============================================================================
 
-FROM mcr.microsoft.com/playwright:v1.49.1-jammy
+FROM node:20-slim AS base
+
+# Install system dependencies for browsers and Python
+RUN apt-get update && apt-get install -y \
+    python3 \
+    python3-pip \
+    curl \
+    # Firefox dependencies
+    libgtk-3-0 \
+    libdbus-glib-1-2 \
+    libxt6 \
+    libx11-xcb1 \
+    libasound2 \
+    && rm -rf /var/lib/apt/lists/*
 
 # Set working directory
 WORKDIR /app
 
-# Install Node.js 20.x and Python
-RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
-    apt-get update && \
-    apt-get install -y nodejs python3 python3-pip && \
-    npm install -g pnpm
-
-# Install Python dependencies for resume generator
-RUN pip3 install --no-cache-dir playwright
+# Install Playwright and Firefox only
+RUN pip3 install --no-cache-dir --break-system-packages playwright && \
+    npx playwright install firefox
 
 # Copy package files first for better caching
 COPY orchestrator/package*.json ./orchestrator/
@@ -27,6 +35,9 @@ RUN npm install --production=false
 
 WORKDIR /app/job-extractor
 RUN npm install --production=false
+
+# Install Camoufox browser (downloads its own Firefox fork)
+RUN npx camoufox fetch
 
 # Copy source code
 WORKDIR /app
