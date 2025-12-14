@@ -11,7 +11,7 @@ import { fileURLToPath } from 'url';
 import type { CreateJobInput, JobSource } from '../../shared/types.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const JOBSPY_DIR = join(__dirname, '../../../../jobspy-extractor');
+const JOBSPY_DIR = join(__dirname, '../../../../extractors/jobspy');
 const JOBSPY_SCRIPT = join(JOBSPY_DIR, 'scrape_jobs.py');
 
 function getPythonPath(): string {

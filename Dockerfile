@@ -27,13 +27,13 @@ RUN pip3 install --no-cache-dir --break-system-packages playwright python-jobspy
 
 # Copy package files first for better caching
 COPY orchestrator/package*.json ./orchestrator/
-COPY job-extractor/package*.json ./job-extractor/
+COPY extractors/gradcracker/package*.json ./extractors/gradcracker/
 
 # Install Node.js dependencies
 WORKDIR /app/orchestrator
 RUN npm install --production=false
 
-WORKDIR /app/job-extractor
+WORKDIR /app/extractors/gradcracker
 RUN npm install --production=false
 
 # Install Camoufox browser (downloads its own Firefox fork)
@@ -42,8 +42,8 @@ RUN npx camoufox fetch
 # Copy source code
 WORKDIR /app
 COPY orchestrator ./orchestrator
-COPY job-extractor ./job-extractor
-COPY jobspy-extractor ./jobspy-extractor
+COPY extractors/gradcracker ./extractors/gradcracker
+COPY extractors/jobspy ./extractors/jobspy
 COPY resume-generator ./resume-generator
 
 # Build the orchestrator (client + server)
