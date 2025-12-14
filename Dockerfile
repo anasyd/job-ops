@@ -21,8 +21,8 @@ RUN apt-get update && apt-get install -y \
 # Set working directory
 WORKDIR /app
 
-# Install Playwright and Firefox only
-RUN pip3 install --no-cache-dir --break-system-packages playwright && \
+# Install Playwright and Firefox only (plus JobSpy for Indeed/LinkedIn scraping)
+RUN pip3 install --no-cache-dir --break-system-packages playwright python-jobspy && \
     npx playwright install firefox
 
 # Copy package files first for better caching
@@ -43,6 +43,7 @@ RUN npx camoufox fetch
 WORKDIR /app
 COPY orchestrator ./orchestrator
 COPY job-extractor ./job-extractor
+COPY jobspy-extractor ./jobspy-extractor
 COPY resume-generator ./resume-generator
 
 # Build the orchestrator (client + server)

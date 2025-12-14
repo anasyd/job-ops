@@ -55,6 +55,8 @@ export const JobCard: React.FC<JobCardProps> = ({
 }) => {
   const sourceLabel: Record<Job["source"], string> = {
     gradcracker: "Gradcracker",
+    indeed: "Indeed",
+    linkedin: "LinkedIn",
   };
 
   const hasPdf = !!job.pdfPath;
