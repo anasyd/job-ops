@@ -29,7 +29,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
-import { copyTextToClipboard, formatJobForLlmContext } from "@client/lib/jobCopy";
+import { copyTextToClipboard, formatJobForWebhook } from "@client/lib/jobCopy";
 import type { Job } from "../../shared/types";
 import { StatusBadge } from "./StatusBadge";
 
@@ -67,6 +67,7 @@ const sourceLabel: Record<Job["source"], string> = {
   gradcracker: "Gradcracker",
   indeed: "Indeed",
   linkedin: "LinkedIn",
+  ukvisajobs: "UK Visa Jobs",
 };
 
 const defaultSortDirection: Record<JobSortKey, JobSortDirection> = {
@@ -146,8 +147,8 @@ export const JobTable: React.FC<JobTableProps> = ({
 
   const handleCopyInfo = async (job: Job) => {
     try {
-      await copyTextToClipboard(formatJobForLlmContext(job));
-      toast.success("Copied job info", { description: "LLM-ready context copied to clipboard." });
+      await copyTextToClipboard(formatJobForWebhook(job));
+      toast.success("Copied job info", { description: "Webhook payload copied to clipboard." });
     } catch {
       toast.error("Could not copy job info");
     }

@@ -21,7 +21,7 @@ import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { copyTextToClipboard, formatJobForLlmContext } from "@client/lib/jobCopy";
+import { copyTextToClipboard, formatJobForWebhook } from "@client/lib/jobCopy";
 import type { Job } from "../../shared/types";
 import { ScoreIndicator } from "./ScoreIndicator";
 import { StatusBadge } from "./StatusBadge";
@@ -64,6 +64,7 @@ export const JobCard: React.FC<JobCardProps> = ({
     gradcracker: "Gradcracker",
     indeed: "Indeed",
     linkedin: "LinkedIn",
+    ukvisajobs: "UK Visa Jobs",
   };
 
   const hasPdf = !!job.pdfPath;
@@ -78,8 +79,8 @@ export const JobCard: React.FC<JobCardProps> = ({
 
   const handleCopyInfo = async () => {
     try {
-      await copyTextToClipboard(formatJobForLlmContext(job));
-      toast.success("Copied job info", { description: "LLM-ready context copied to clipboard." });
+      await copyTextToClipboard(formatJobForWebhook(job));
+      toast.success("Copied job info", { description: "Webhook payload copied to clipboard." });
     } catch {
       toast.error("Could not copy job info");
     }
