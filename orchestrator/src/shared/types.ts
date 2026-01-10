@@ -170,6 +170,19 @@ export interface JobsListResponse {
   byStatus: Record<JobStatus, number>;
 }
 
+export interface UkVisaJobsSearchResponse {
+  jobs: CreateJobInput[];
+  totalJobs: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
+
+export interface UkVisaJobsImportResponse {
+  created: number;
+  skipped: number;
+}
+
 export interface PipelineStatusResponse {
   isRunning: boolean;
   lastRun: PipelineRun | null;

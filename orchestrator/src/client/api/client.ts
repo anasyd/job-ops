@@ -11,6 +11,9 @@ import type {
   PipelineRun,
   AppSettings,
   ResumeProjectsSettings,
+  UkVisaJobsSearchResponse,
+  UkVisaJobsImportResponse,
+  CreateJobInput,
 } from '../../shared/types';
 
 const API_BASE = '/api';
@@ -105,6 +108,26 @@ export async function runPipeline(config?: {
   return fetchApi<{ message: string }>('/pipeline/run', {
     method: 'POST',
     body: JSON.stringify(config || {}),
+  });
+}
+
+// UK Visa Jobs API
+export async function searchUkVisaJobs(input: {
+  searchTerm?: string;
+  page?: number;
+}): Promise<UkVisaJobsSearchResponse> {
+  return fetchApi<UkVisaJobsSearchResponse>('/ukvisajobs/search', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+export async function importUkVisaJobs(input: {
+  jobs: CreateJobInput[];
+}): Promise<UkVisaJobsImportResponse> {
+  return fetchApi<UkVisaJobsImportResponse>('/ukvisajobs/import', {
+    method: 'POST',
+    body: JSON.stringify(input),
   });
 }
 

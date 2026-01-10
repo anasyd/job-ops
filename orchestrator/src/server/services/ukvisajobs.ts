@@ -14,6 +14,9 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const UKVISAJOBS_DIR = join(__dirname, '../../../../extractors/ukvisajobs');
 const STORAGE_DIR = join(UKVISAJOBS_DIR, 'storage/datasets/default');
 const AUTH_CACHE_PATH = join(UKVISAJOBS_DIR, 'storage/ukvisajobs-auth.json');
+const UKVISAJOBS_API_URL = 'https://my.ukvisajobs.com/ukvisa-api/api/fetch-jobs-data';
+const UKVISAJOBS_PAGE_SIZE = 15;
+let isUkVisaJobsRunning = false;
 
 interface UkVisaJobsAuthSession {
     token?: string;
@@ -35,6 +38,117 @@ export interface UkVisaJobsResult {
     success: boolean;
     jobs: CreateJobInput[];
     error?: string;
+}
+
+function toStringOrNull(value: unknown): string | null {
+    if (value === null || value === undefined) return null;
+    if (typeof value === 'string') {
+        const trimmed = value.trim();
+        return trimmed.length > 0 ? trimmed : null;
+    }
+    if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+    return null;
+}
+
+function toNumberOrNull(value: unknown): number | null {
+    if (value === null || value === undefined) return null;
+    if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+    if (typeof value === 'string') {
+        const trimmed = value.trim();
+        if (!trimmed) return null;
+        const parsed = Number(trimmed);
+        return Number.isFinite(parsed) ? parsed : null;
+    }
+    return null;
+}
+
+function buildCookieHeader(session: UkVisaJobsAuthSession): string {
+    const cookieParts: string[] = [];
+    if (session.csrfToken) cookieParts.push(`csrf_token=${session.csrfToken}`);
+    if (session.ciSession) cookieParts.push(`ci_session=${session.ciSession}`);
+    const token = session.authToken || session.token;
+    if (token) cookieParts.push(`authToken=${token}`);
+    return cookieParts.join('; ');
+}
+
+function buildVisaInfoDescription(raw: UkVisaJobsApiJob): string | undefined {
+    const visaInfo: string[] = [];
+    if (raw.visa_acceptance?.toLowerCase() === 'yes') visaInfo.push('Visa acceptance: Yes');
+    if (raw.applicants_outside_uk?.toLowerCase() === 'yes') visaInfo.push('Accepts applicants outside UK');
+    if (raw.likely_to_sponsor?.toLowerCase() === 'yes') visaInfo.push('Likely to sponsor');
+    if (raw.definitely_sponsored?.toLowerCase() === 'yes') visaInfo.push('Definitely sponsored');
+    if (raw.new_entrant?.toLowerCase() === 'yes') visaInfo.push('New entrant friendly');
+    if (raw.student_graduate?.toLowerCase() === 'yes') visaInfo.push('Student/Graduate friendly');
+    if (visaInfo.length === 0) return undefined;
+    return `Visa sponsorship info: ${visaInfo.join(', ')}`;
+}
+
+function formatSalary(raw: UkVisaJobsApiJob): string | undefined {
+    const minSalary = toNumberOrNull(raw.min_salary);
+    const maxSalary = toNumberOrNull(raw.max_salary);
+    const interval = toStringOrNull(raw.salary_interval);
+
+    if (minSalary && maxSalary && maxSalary > 0) {
+        return `GBP ${minSalary.toLocaleString()}-${maxSalary.toLocaleString()}${interval ? ` / ${interval}` : ''}`;
+    }
+    if (maxSalary && maxSalary > 0) {
+        return `GBP ${maxSalary.toLocaleString()}${interval ? ` / ${interval}` : ''}`;
+    }
+    return undefined;
+}
+
+function mapApiJob(raw: UkVisaJobsApiJob): CreateJobInput {
+    const description = toStringOrNull(raw.description) ?? buildVisaInfoDescription(raw);
+    return {
+        source: 'ukvisajobs',
+        sourceJobId: toStringOrNull(raw.id) ?? undefined,
+        title: toStringOrNull(raw.title) ?? 'Unknown Title',
+        employer: toStringOrNull(raw.company_name) ?? 'Unknown Employer',
+        employerUrl: toStringOrNull(raw.company_link) ?? undefined,
+        jobUrl: toStringOrNull(raw.job_link) ?? '',
+        applicationLink: toStringOrNull(raw.job_link) ?? undefined,
+        location: toStringOrNull(raw.city) ?? undefined,
+        deadline: toStringOrNull(raw.job_expire) ?? undefined,
+        salary: formatSalary(raw),
+        jobDescription: description ?? undefined,
+        datePosted: toStringOrNull(raw.created_date) ?? undefined,
+        degreeRequired: toStringOrNull(raw.degree_requirement) ?? undefined,
+        jobType: toStringOrNull(raw.job_type) ?? undefined,
+        jobLevel: toStringOrNull(raw.job_level) ?? undefined,
+    };
+}
+
+interface UkVisaJobsApiJob {
+    id: string;
+    title: string;
+    company_name: string;
+    company_link?: string;
+    job_link: string;
+    city?: string;
+    created_date?: string;
+    job_expire?: string;
+    description?: string;
+    min_salary?: string;
+    max_salary?: string;
+    salary_interval?: string;
+    salary_method?: string;
+    degree_requirement?: string;
+    job_type?: string;
+    job_level?: string;
+    job_industry?: string;
+    visa_acceptance?: string;
+    applicants_outside_uk?: string;
+    likely_to_sponsor?: string;
+    definitely_sponsored?: string;
+    new_entrant?: string;
+    student_graduate?: string;
+}
+
+interface UkVisaJobsApiResponse {
+    status: number;
+    totalJobs: number;
+    query?: string;
+    jobs: UkVisaJobsApiJob[];
 }
 
 /**
@@ -134,7 +248,85 @@ async function clearStorageDataset(): Promise<void> {
     }
 }
 
+export async function fetchUkVisaJobsPage(options: { searchKeyword?: string; page?: number } = {}): Promise<{
+    jobs: CreateJobInput[];
+    totalJobs: number;
+    page: number;
+    pageSize: number;
+}> {
+    const page = options.page && options.page > 0 ? options.page : 1;
+    const authSession = await loadCachedAuthSession();
+    const token = authSession?.token || authSession?.authToken;
+
+    if (!token) {
+        throw new Error('UK Visa Jobs auth session missing. Run the extractor to refresh tokens.');
+    }
+
+    const formData = new FormData();
+    formData.append('is_global', '0');
+    formData.append('sortBy', 'desc');
+    formData.append('pageNo', String(page));
+    formData.append('visaAcceptance', 'false');
+    formData.append('applicants_outside_uk', 'false');
+    formData.append('searchKeyword', options.searchKeyword ? options.searchKeyword : 'null');
+    formData.append('token', token);
+
+    const cookies = buildCookieHeader({
+        token: authSession?.token,
+        authToken: authSession?.authToken,
+        csrfToken: authSession?.csrfToken,
+        ciSession: authSession?.ciSession,
+    });
+
+    const response = await fetch(UKVISAJOBS_API_URL, {
+        method: 'POST',
+        headers: {
+            'accept': 'application/json, text/plain, */*',
+            'cookie': cookies,
+            'origin': 'https://my.ukvisajobs.com',
+            'referer': `https://my.ukvisajobs.com/open-jobs/1?is_global=0&sortBy=desc&pageNo=${page}&visaAcceptance=false&applicants_outside_uk=false`,
+            'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        },
+        body: formData,
+    });
+
+    const text = await response.text();
+    if (!response.ok) {
+        throw new Error(`UK Visa Jobs API returned ${response.status}: ${text}`);
+    }
+
+    let data: UkVisaJobsApiResponse;
+    try {
+        data = JSON.parse(text) as UkVisaJobsApiResponse;
+    } catch (error) {
+        throw new Error('UK Visa Jobs API returned an invalid response.');
+    }
+
+    if (data.status !== 1) {
+        throw new Error(`UK Visa Jobs API returned status ${data.status}`);
+    }
+
+    const jobs = (data.jobs || [])
+        .map(mapApiJob)
+        .filter((job) => Boolean(job.jobUrl));
+
+    const totalJobs = Number.isFinite(data.totalJobs) ? data.totalJobs : jobs.length;
+
+    return {
+        jobs,
+        totalJobs,
+        page,
+        pageSize: UKVISAJOBS_PAGE_SIZE,
+    };
+}
+
 export async function runUkVisaJobs(options: RunUkVisaJobsOptions = {}): Promise<UkVisaJobsResult> {
+    if (isUkVisaJobsRunning) {
+        return { success: false, jobs: [], error: 'UK Visa Jobs extractor is already running' };
+    }
+
+    isUkVisaJobsRunning = true;
+    try {
     console.log('ðŸ‡¬ðŸ‡§ Running UK Visa Jobs extractor...');
 
     // Determine terms to run
@@ -226,6 +418,9 @@ export async function runUkVisaJobs(options: RunUkVisaJobsOptions = {}): Promise
 
     console.log(`âœ… UK Visa Jobs: imported total ${allJobs.length} unique jobs`);
     return { success: true, jobs: allJobs };
+    } finally {
+        isUkVisaJobsRunning = false;
+    }
 }
 
 /**

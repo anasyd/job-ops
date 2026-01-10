@@ -639,6 +639,11 @@ export const OrchestratorPage: React.FC = () => {
             <Button variant="ghost" size="icon" onClick={loadJobs} disabled={isLoading} aria-label="Refresh jobs">
               <RefreshCcw className="h-4 w-4" />
             </Button>
+            <Button asChild variant="ghost" size="icon" aria-label="UK Visa Jobs search">
+              <Link to="/ukvisajobs">
+                <Search className="h-4 w-4" />
+              </Link>
+            </Button>
             <Button asChild variant="ghost" size="icon" aria-label="Settings">
               <Link to="/settings">
                 <Settings className="h-4 w-4" />
