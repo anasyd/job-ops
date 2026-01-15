@@ -257,6 +257,7 @@ const TailorMode: React.FC<TailorModeProps> = ({
   const [draftStatus, setDraftStatus] = useState<
     "unsaved" | "saving" | "saved"
   >("saved");
+  const [showDescription, setShowDescription] = useState(false);
 
   // Load project catalog
   useEffect(() => {
@@ -458,18 +459,35 @@ const TailorMode: React.FC<TailorModeProps> = ({
           </Button>
         </div>
 
-        {/* Job Description */}
+        {/* Job Description - collapsible */}
         <div className='space-y-2'>
-          <label className='text-xs font-medium text-muted-foreground'>
-            Job Description (Edit to help AI tailoring)
-          </label>
-          <textarea
-            className='w-full min-h-[120px] max-h-[250px] rounded-lg border border-border/60 bg-background/50 px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50'
-            value={jobDescription}
-            onChange={(e) => setJobDescription(e.target.value)}
-            placeholder='The raw job description...'
-            disabled={isGenerating || isFinalizing}
-          />
+          <button
+            type='button'
+            onClick={() => setShowDescription(!showDescription)}
+            className='flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors w-full'
+          >
+            {showDescription ? (
+              <ChevronUp className='h-3.5 w-3.5' />
+            ) : (
+              <ChevronDown className='h-3.5 w-3.5' />
+            )}
+            {showDescription ? "Hide" : "Edit"} job description
+          </button>
+
+          {showDescription && (
+            <div className='space-y-1'>
+              <label className='text-[10px] font-medium text-muted-foreground/70'>
+                Edit to help AI tailoring
+              </label>
+              <textarea
+                className='w-full min-h-[120px] max-h-[250px] rounded-lg border border-border/60 bg-background/50 px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50'
+                value={jobDescription}
+                onChange={(e) => setJobDescription(e.target.value)}
+                placeholder='The raw job description...'
+                disabled={isGenerating || isFinalizing}
+              />
+            </div>
+          )}
         </div>
 
         {/* Tailored Summary */}
