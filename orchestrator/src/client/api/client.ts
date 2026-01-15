@@ -100,10 +100,6 @@ export async function getPipelineStatus(): Promise<PipelineStatusResponse> {
   return fetchApi<PipelineStatusResponse>('/pipeline/status');
 }
 
-export async function getPipelineRuns(): Promise<PipelineRun[]> {
-  return fetchApi<PipelineRun[]>('/pipeline/runs');
-}
-
 export async function runPipeline(config?: {
   topN?: number;
   minSuitabilityScore?: number;
