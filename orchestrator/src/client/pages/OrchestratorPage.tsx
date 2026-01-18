@@ -1205,13 +1205,13 @@ export const OrchestratorPage: React.FC = () => {
 
           {/* Compact metrics summary - demoted visual weight */}
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground/80">
-            <span className="font-medium text-foreground/60">{totalJobs} jobs total</span>
-            <span className="text-border">•</span>
             <span><span className="tabular-nums">{stats.ready}</span> ready</span>
             <span className="text-border">•</span>
             <span><span className="tabular-nums">{stats.discovered + stats.processing}</span> discovered</span>
             <span className="text-border">•</span>
             <span><span className="tabular-nums">{stats.applied}</span> applied</span>
+            <span className="text-border">•</span>
+            <span className="font-medium text-foreground/60">{totalJobs} jobs total</span>
             {(stats.skipped > 0 || stats.expired > 0) && (
               <>
                 <span className="text-border">•</span>
