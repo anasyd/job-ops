@@ -12,6 +12,7 @@ import {
 import { Dialog, DialogClose, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { Timeline9 } from "@/components/timeline9";
 import type { Job } from "../../shared/types";
 
 type TimelineStatus = "done" | "in-progress" | "pending";
@@ -175,8 +176,8 @@ export const JobTimelineModal: React.FC<JobTimelineModalProps> = ({ job, open, o
           </div>
 
           <div className="grid min-h-0 flex-1 gap-0 lg:grid-cols-[minmax(0,1fr)_320px]">
-            <section className="min-h-0 border-r border-border/60 bg-muted/5 px-5 py-4">
-              <div className="space-y-4">
+            <section className="min-h-0 border-r border-border/60 bg-muted/5 px-5 py-4 flex flex-col">
+              <div className="flex min-h-0 flex-col gap-4">
                 <div className="rounded-xl border border-border/60 bg-muted/15 p-4">
                   <div className="flex items-center justify-between gap-3">
                     <div>
@@ -251,22 +252,18 @@ export const JobTimelineModal: React.FC<JobTimelineModalProps> = ({ job, open, o
                   </div>
                 </div>
 
-                <div className="relative space-y-4 pl-5">
-                  <div className="absolute left-2 top-2 h-[calc(100%-16px)] w-px bg-border/50" />
-                  {view.timeline.map((event) => (
-                    <div key={event.id} className="relative">
-                      <span className={cn("absolute -left-[2px] top-4 h-2 w-2 rounded-full", statusDot(event.status))} />
-                      <div className="rounded-lg border border-border/50 bg-muted/10 px-4 py-3">
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="text-sm font-medium text-foreground/90">{event.title}</div>
-                          <div className="text-[11px] text-muted-foreground/70 tabular-nums">
-                            {event.time}
-                          </div>
-                        </div>
-                        <div className="text-xs text-muted-foreground/80 mt-1">{event.subtitle}</div>
-                      </div>
-                    </div>
-                  ))}
+                <div className="min-h-0 flex-1 overflow-y-auto pr-2">
+                  <Timeline9
+                    compact
+                    showTitle={false}
+                    className="py-0"
+                    entries={view.timeline.map((event) => ({
+                      date: event.time,
+                      title: event.title,
+                      content: <div className="text-xs text-muted-foreground/80">{event.subtitle}</div>,
+                      dotClassName: statusDot(event.status),
+                    }))}
+                  />
                 </div>
               </div>
             </section>
