@@ -158,7 +158,10 @@ const emptyStateCopy: Record<FilterTab, string> = {
 const formatDate = (dateStr: string | null) => {
   if (!dateStr) return null;
   try {
-    return new Date(dateStr).toLocaleDateString("en-GB", {
+    const normalized = dateStr.includes("T") ? dateStr : dateStr.replace(" ", "T");
+    const parsed = new Date(normalized);
+    if (Number.isNaN(parsed.getTime())) return dateStr;
+    return parsed.toLocaleDateString("en-GB", {
       day: "numeric",
       month: "short",
       year: "numeric",
