@@ -16,6 +16,7 @@ import "@xyflow/react/dist/style.css";
 import {
   Activity,
   CheckCircle2,
+  ChevronRight,
   Clipboard,
   Copy,
   Download,
@@ -67,6 +68,7 @@ interface JobHubNodeData {
   state: HubState;
   chips: string[];
   scoreLabel: string;
+  actions?: NodeAction[];
   inspector: InspectorData;
 }
 
@@ -83,7 +85,12 @@ interface JobPluginNodeData {
   inspector: InspectorData;
 }
 
-type FlowNodeData = JobHubNodeData | JobPluginNodeData;
+interface StageHeaderNodeData {
+  kind: "stage";
+  label: string;
+}
+
+type FlowNodeData = JobHubNodeData | JobPluginNodeData | StageHeaderNodeData;
 
 const sourceLabel: Record<Job["source"], string> = {
   gradcracker: "Gradcracker",
@@ -238,22 +245,20 @@ const ActionPill: React.FC<{ action: NodeAction }> = ({ action }) => {
 const JobHubNode: React.FC<NodeProps<JobHubNodeData>> = ({ data, selected }) => {
   const stateToken = hubStateTokens[data.state];
   const inPorts = [
-    { id: "in-source", label: "Source", top: 54 },
-    { id: "in-jd", label: "JD", top: 78 },
+    { id: "in-cv", label: "CV", top: 54 },
+    { id: "in-cover", label: "Cover", top: 78 },
     { id: "in-sponsor", label: "Sponsor", top: 102 },
     { id: "in-meta", label: "Metadata", top: 126 },
   ];
   const outPorts = [
-    { id: "out-cv", label: "CV PDF", top: 54 },
-    { id: "out-cover", label: "Cover", top: 78 },
-    { id: "out-apply", label: "Apply", top: 102 },
-    { id: "out-notion", label: "Notion", top: 126 },
+    { id: "out-notion", label: "Notion", top: 76 },
+    { id: "out-outcome", label: "Outcome", top: 104 },
   ];
 
   return (
     <div
       className={cn(
-        "relative w-[320px] rounded-xl border border-border/60 bg-muted/20 px-4 py-3 shadow-none",
+        "relative w-[280px] rounded-lg border border-border/60 bg-muted/30 px-4 py-3 shadow-none",
         selected && "ring-2 ring-primary/40"
       )}
     >
@@ -327,6 +332,14 @@ const JobHubNode: React.FC<NodeProps<JobHubNodeData>> = ({ data, selected }) => 
           <span className="font-medium text-foreground/80">{data.scoreLabel}</span>
         </div>
       </div>
+
+      {data.actions && data.actions.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-1">
+          {data.actions.map((action) => (
+            <ActionPill key={action.id} action={action} />
+          ))}
+        </div>
+      )}
     </div>
   );
 };
@@ -340,7 +353,7 @@ const JobPluginNode: React.FC<NodeProps<JobPluginNodeData>> = ({ data, selected 
   return (
     <div
       className={cn(
-        "w-[240px] rounded-lg border border-border/60 bg-muted/20 px-3 py-2 shadow-none",
+        "w-[280px] rounded-lg border border-border/60 bg-muted/30 px-3 py-2 shadow-none",
         selected && "ring-2 ring-primary/40"
       )}
     >
@@ -367,12 +380,13 @@ const JobPluginNode: React.FC<NodeProps<JobPluginNodeData>> = ({ data, selected 
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <span className={cn("h-2 w-2 rounded-full", statusToken.dot)} />
+          {Icon && <Icon className="h-3.5 w-3.5 text-muted-foreground/70" />}
           <div>
             <div className="text-xs font-semibold">{data.title}</div>
             {data.subtitle && <div className="text-[10px] text-muted-foreground/70">{data.subtitle}</div>}
           </div>
         </div>
-        {Icon && <Icon className="h-3.5 w-3.5 text-muted-foreground/60" />}
+        <ChevronRight className="h-4 w-4 text-muted-foreground/50" />
       </div>
 
       <div className="mt-1 text-[10px] text-muted-foreground/70">Updated {data.updatedAt}</div>
@@ -387,6 +401,12 @@ const JobPluginNode: React.FC<NodeProps<JobPluginNodeData>> = ({ data, selected 
     </div>
   );
 };
+
+const StageHeaderNode: React.FC<NodeProps<StageHeaderNodeData>> = ({ data }) => (
+  <div className="w-[280px] rounded-md border border-border/60 bg-muted/40 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground/80">
+    {data.label}
+  </div>
+);
 
 const InspectorPanel: React.FC<{ data?: InspectorData }> = ({ data }) => {
   if (!data) {
@@ -496,32 +516,56 @@ const buildFlow = (job: Job, onAction: (message: string) => void, actions: FlowA
         ? "in-progress"
         : "missing";
   const coverStatus: NodeStatus = "missing";
-  const applyStatus: NodeStatus = actions.isApplying
-    ? "in-progress"
-    : applyUrl
-      ? job.status === "applied"
-        ? "ready"
-        : "in-progress"
-      : "missing";
   const notionStatus: NodeStatus = job.notionPageId ? "ready" : "missing";
   const oaStatus: NodeStatus = "missing";
 
   const hubState = resolveHubState(job);
 
   const nodePositions = {
+    headerInputs: { x: 40, y: 40 },
+    headerGenerate: { x: 380, y: 40 },
+    headerApply: { x: 720, y: 40 },
+    headerOutcomes: { x: 1060, y: 40 },
     source: { x: 40, y: 120 },
-    description: { x: 40, y: 280 },
-    sponsor: { x: 40, y: 440 },
-    metadata: { x: 40, y: 600 },
-    hub: { x: 360, y: 280 },
-    cv: { x: 760, y: 120 },
-    cover: { x: 760, y: 280 },
-    apply: { x: 760, y: 440 },
-    notion: { x: 760, y: 600 },
-    oa: { x: 1040, y: 440 },
+    description: { x: 40, y: 240 },
+    sponsor: { x: 40, y: 360 },
+    metadata: { x: 40, y: 480 },
+    cv: { x: 380, y: 140 },
+    cover: { x: 380, y: 260 },
+    hub: { x: 720, y: 200 },
+    notion: { x: 1060, y: 180 },
+    oa: { x: 1060, y: 320 },
   };
 
   const nodes: Array<Node<FlowNodeData>> = [
+    {
+      id: "header-inputs",
+      type: "stageHeader",
+      position: nodePositions.headerInputs,
+      data: { kind: "stage", label: "Inputs" },
+      selectable: false,
+    },
+    {
+      id: "header-generate",
+      type: "stageHeader",
+      position: nodePositions.headerGenerate,
+      data: { kind: "stage", label: "Generate" },
+      selectable: false,
+    },
+    {
+      id: "header-apply",
+      type: "stageHeader",
+      position: nodePositions.headerApply,
+      data: { kind: "stage", label: "Apply" },
+      selectable: false,
+    },
+    {
+      id: "header-outcomes",
+      type: "stageHeader",
+      position: nodePositions.headerOutcomes,
+      data: { kind: "stage", label: "Outcomes" },
+      selectable: false,
+    },
     {
       id: "hub",
       type: "jobHub",
@@ -538,16 +582,43 @@ const buildFlow = (job: Job, onAction: (message: string) => void, actions: FlowA
           `Match: ${job.suitabilityScore ?? "--"}%`,
         ],
         scoreLabel,
+        actions: [
+          {
+            id: "open-apply",
+            label: "Open link",
+            icon: ExternalLink,
+            href: applyUrl || undefined,
+            disabled: !applyUrl,
+          },
+          {
+            id: "copy-apply",
+            label: "Copy link",
+            icon: Copy,
+            onClick: () => {
+              if (!applyUrl) return;
+              void copyTextToClipboard(applyUrl).then(() => toast.success("Apply link copied"));
+            },
+            disabled: !applyUrl,
+          },
+          {
+            id: "mark-applied",
+            label: job.status === "applied" ? "Applied" : "Mark applied",
+            icon: CheckCircle2,
+            onClick: actions.onMarkApplied,
+            disabled: job.status === "applied" || !actions.onMarkApplied || actions.isApplying,
+          },
+        ],
         inspector: {
           title: "Job hub",
           subtitle: `${job.title} - ${job.employer}`,
           status: hubState === "closed" ? "failed" : hubState === "applied" ? "ready" : "in-progress",
-          summary: "Central state machine for this job. Artifacts freeze when Applied.",
+          summary: "Apply stage with job context. Artifacts freeze when Applied.",
           meta: [
             { label: "State", value: hubStateTokens[hubState].label },
             { label: "Source", value: sourceLabel[job.source] },
             { label: "Discovered", value: formatDateTime(job.discoveredAt) },
             { label: "Updated", value: formatDateTime(job.updatedAt) },
+            { label: "Apply URL", value: applyUrl },
           ],
           logs: [
             job.status === "applied" ? "Artifacts locked for applied state." : "Tracking active.",
@@ -785,6 +856,7 @@ const buildFlow = (job: Job, onAction: (message: string) => void, actions: FlowA
         updatedAt: job.processedAt ? formatDateTime(job.processedAt) : "Not generated",
         icon: FileText,
         inputHandle: true,
+        outputHandle: true,
         actions: [
           {
             id: "download-cv",
@@ -838,6 +910,7 @@ const buildFlow = (job: Job, onAction: (message: string) => void, actions: FlowA
         updatedAt: "Not generated",
         icon: ScrollText,
         inputHandle: true,
+        outputHandle: true,
         actions: [
           {
             id: "generate-cover",
@@ -860,62 +933,6 @@ const buildFlow = (job: Job, onAction: (message: string) => void, actions: FlowA
           meta: [{ label: "Status", value: "Missing" }],
           logs: ["No cover letter generated."],
           raw: {},
-        },
-      },
-    },
-    {
-      id: "apply",
-      type: "jobPlugin",
-      position: nodePositions.apply,
-      data: {
-        kind: "plugin",
-        title: "Apply",
-        subtitle: "Final application URL",
-        status: applyStatus,
-        updatedAt: job.appliedAt ? formatDateTime(job.appliedAt) : "Not opened",
-        icon: Rocket,
-        inputHandle: true,
-        outputHandle: true,
-        actions: [
-          {
-            id: "open-apply",
-            label: "Open link",
-            icon: ExternalLink,
-            href: applyUrl || undefined,
-            disabled: !applyUrl,
-          },
-          {
-            id: "copy-apply",
-            label: "Copy link",
-            icon: Copy,
-            onClick: () => {
-              if (!applyUrl) return;
-              void copyTextToClipboard(applyUrl).then(() => toast.success("Apply link copied"));
-            },
-            disabled: !applyUrl,
-          },
-          {
-            id: "mark-applied",
-            label: job.status === "applied" ? "Applied" : "Mark applied",
-            icon: CheckCircle2,
-            onClick: actions.onMarkApplied,
-            disabled: job.status === "applied" || !actions.onMarkApplied || actions.isApplying,
-          },
-        ],
-        inspector: {
-          title: "Apply node",
-          subtitle: "Final application URL",
-          status: applyStatus,
-          summary: "Application URL locked when Applied.",
-          meta: [
-            { label: "Apply URL", value: applyUrl },
-            { label: "ATS guess", value: "-" },
-          ],
-          logs: applyUrl ? ["Apply URL stored."] : ["No application URL saved."],
-          raw: {
-            applicationLink: job.applicationLink,
-            jobUrl: job.jobUrl,
-          },
         },
       },
     },
@@ -999,24 +1016,34 @@ const buildFlow = (job: Job, onAction: (message: string) => void, actions: FlowA
 
   const edges: Edge[] = [
     {
-      id: "e-source-hub",
+      id: "e-source-cv",
       source: "source",
       sourceHandle: "out",
-      target: "hub",
-      targetHandle: "in-source",
+      target: "cv",
+      targetHandle: "in",
       animated: true,
       style: { stroke: getEdgeStroke(sourceStatus), strokeWidth: 1.5 },
       markerEnd: { type: MarkerType.ArrowClosed, color: getEdgeStroke(sourceStatus) },
     },
     {
-      id: "e-description-hub",
+      id: "e-description-cover",
       source: "description",
       sourceHandle: "out",
-      target: "hub",
-      targetHandle: "in-jd",
+      target: "cover",
+      targetHandle: "in",
       animated: descriptionStatus !== "missing",
       style: { stroke: getEdgeStroke(descriptionStatus), strokeWidth: 1.5 },
       markerEnd: { type: MarkerType.ArrowClosed, color: getEdgeStroke(descriptionStatus) },
+    },
+    {
+      id: "e-metadata-hub",
+      source: "metadata",
+      sourceHandle: "out",
+      target: "hub",
+      targetHandle: "in-meta",
+      animated: metadataStatus !== "missing",
+      style: { stroke: getEdgeStroke(metadataStatus), strokeWidth: 1.5 },
+      markerEnd: { type: MarkerType.ArrowClosed, color: getEdgeStroke(metadataStatus) },
     },
     {
       id: "e-sponsor-hub",
@@ -1029,44 +1056,24 @@ const buildFlow = (job: Job, onAction: (message: string) => void, actions: FlowA
       markerEnd: { type: MarkerType.ArrowClosed, color: getEdgeStroke(sponsorStatus) },
     },
     {
-      id: "e-meta-hub",
-      source: "metadata",
+      id: "e-cv-hub",
+      source: "cv",
       sourceHandle: "out",
       target: "hub",
-      targetHandle: "in-meta",
-      animated: metadataStatus !== "missing",
-      style: { stroke: getEdgeStroke(metadataStatus), strokeWidth: 1.5 },
-      markerEnd: { type: MarkerType.ArrowClosed, color: getEdgeStroke(metadataStatus) },
-    },
-    {
-      id: "e-hub-cv",
-      source: "hub",
-      sourceHandle: "out-cv",
-      target: "cv",
-      targetHandle: "in",
+      targetHandle: "in-cv",
       animated: cvStatus !== "missing",
       style: { stroke: getEdgeStroke(cvStatus), strokeWidth: 1.5 },
       markerEnd: { type: MarkerType.ArrowClosed, color: getEdgeStroke(cvStatus) },
     },
     {
-      id: "e-hub-cover",
-      source: "hub",
-      sourceHandle: "out-cover",
-      target: "cover",
-      targetHandle: "in",
+      id: "e-cover-hub",
+      source: "cover",
+      sourceHandle: "out",
+      target: "hub",
+      targetHandle: "in-cover",
       animated: coverStatus !== "missing",
       style: { stroke: getEdgeStroke(coverStatus), strokeWidth: 1.5 },
       markerEnd: { type: MarkerType.ArrowClosed, color: getEdgeStroke(coverStatus) },
-    },
-    {
-      id: "e-hub-apply",
-      source: "hub",
-      sourceHandle: "out-apply",
-      target: "apply",
-      targetHandle: "in",
-      animated: applyStatus !== "missing",
-      style: { stroke: getEdgeStroke(applyStatus), strokeWidth: 1.5 },
-      markerEnd: { type: MarkerType.ArrowClosed, color: getEdgeStroke(applyStatus) },
     },
     {
       id: "e-hub-notion",
@@ -1079,9 +1086,9 @@ const buildFlow = (job: Job, onAction: (message: string) => void, actions: FlowA
       markerEnd: { type: MarkerType.ArrowClosed, color: getEdgeStroke(notionStatus) },
     },
     {
-      id: "e-apply-oa",
-      source: "apply",
-      sourceHandle: "out",
+      id: "e-hub-oa",
+      source: "hub",
+      sourceHandle: "out-outcome",
       target: "oa",
       targetHandle: "in",
       animated: oaStatus !== "missing",
@@ -1313,8 +1320,11 @@ export const JobFlowModal: React.FC<JobFlowModalProps> = ({
                 edges={edges}
                 onNodesChange={onNodesChange}
                 onEdgesChange={onEdgesChange}
-                onNodeClick={(_, node) => setActiveNodeId(node.id)}
-                nodeTypes={{ jobHub: JobHubNode, jobPlugin: JobPluginNode }}
+                onNodeClick={(_, node) => {
+                  if (node.type === "stageHeader") return;
+                  setActiveNodeId(node.id);
+                }}
+                nodeTypes={{ jobHub: JobHubNode, jobPlugin: JobPluginNode, stageHeader: StageHeaderNode }}
                 nodesDraggable={false}
                 nodesConnectable={false}
                 elementsSelectable
