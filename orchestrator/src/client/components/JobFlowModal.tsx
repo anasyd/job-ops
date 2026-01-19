@@ -500,18 +500,18 @@ const buildFlow = (job: Job, onAction: (message: string) => void, actions: FlowA
   const hubState = resolveHubState(job);
 
   const nodePositions = {
-    headerInputs: { x: 40, y: 40 },
-    headerGenerate: { x: 380, y: 40 },
-    headerApply: { x: 720, y: 40 },
-    headerOutcomes: { x: 1060, y: 40 },
+    headerInputs: { x: 40, y: 30 },
+    headerGenerate: { x: 360, y: 30 },
+    headerApply: { x: 700, y: 30 },
+    headerOutcomes: { x: 1040, y: 30 },
     source: { x: 40, y: 120 },
-    description: { x: 40, y: 240 },
-    metadata: { x: 40, y: 480 },
-    cv: { x: 380, y: 140 },
-    cover: { x: 380, y: 260 },
-    hub: { x: 720, y: 200 },
-    notion: { x: 1060, y: 180 },
-    oa: { x: 1060, y: 320 },
+    description: { x: 40, y: 250 },
+    metadata: { x: 40, y: 400 },
+    cv: { x: 360, y: 140 },
+    cover: { x: 360, y: 260 },
+    hub: { x: 700, y: 230 },
+    notion: { x: 1040, y: 190 },
+    oa: { x: 1040, y: 320 },
   };
 
   const nodes: Array<Node<FlowNodeData>> = [
@@ -521,6 +521,7 @@ const buildFlow = (job: Job, onAction: (message: string) => void, actions: FlowA
       position: nodePositions.headerInputs,
       data: { kind: "stage", label: "Inputs" },
       selectable: false,
+      draggable: false,
     },
     {
       id: "header-generate",
@@ -528,6 +529,7 @@ const buildFlow = (job: Job, onAction: (message: string) => void, actions: FlowA
       position: nodePositions.headerGenerate,
       data: { kind: "stage", label: "Generate" },
       selectable: false,
+      draggable: false,
     },
     {
       id: "header-apply",
@@ -535,6 +537,7 @@ const buildFlow = (job: Job, onAction: (message: string) => void, actions: FlowA
       position: nodePositions.headerApply,
       data: { kind: "stage", label: "Apply" },
       selectable: false,
+      draggable: false,
     },
     {
       id: "header-outcomes",
@@ -542,6 +545,7 @@ const buildFlow = (job: Job, onAction: (message: string) => void, actions: FlowA
       position: nodePositions.headerOutcomes,
       data: { kind: "stage", label: "Outcomes" },
       selectable: false,
+      draggable: false,
     },
     {
       id: "hub",
@@ -1020,6 +1024,8 @@ export const JobFlowModal: React.FC<JobFlowModalProps> = ({
   onJobUpdated,
 }) => {
   const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
+  const nodePositionsRef = React.useRef<Record<string, { x: number; y: number }>>({});
+  const resetPositionsRef = React.useRef(false);
   const [isGeneratingCv, setIsGeneratingCv] = useState(false);
   const [isApplying, setIsApplying] = useState(false);
   const [isSendingWebhook, setIsSendingWebhook] = useState(false);
@@ -1032,7 +1038,31 @@ export const JobFlowModal: React.FC<JobFlowModalProps> = ({
     setIsGeneratingCv(false);
     setIsApplying(false);
     setIsSendingWebhook(false);
+    nodePositionsRef.current = {};
+    resetPositionsRef.current = false;
   }, [job?.id]);
+
+  const getStoredPositions = useCallback((jobId: string) => {
+    if (typeof window === "undefined") return null;
+    try {
+      const raw = localStorage.getItem(`jobflow.positions.${jobId}`);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw) as Record<string, { x?: number; y?: number }>;
+      if (!parsed || typeof parsed !== "object") return null;
+      const next: Record<string, { x: number; y: number }> = {};
+      Object.entries(parsed).forEach(([id, value]) => {
+        if (!value || typeof value !== "object") return;
+        const x = value.x;
+        const y = value.y;
+        if (typeof x === "number" && typeof y === "number") {
+          next[id] = { x, y };
+        }
+      });
+      return Object.keys(next).length > 0 ? next : null;
+    } catch {
+      return null;
+    }
+  }, []);
 
   const handleGenerateCv = useCallback(async () => {
     if (!job || isGeneratingCv) return;
@@ -1115,16 +1145,63 @@ export const JobFlowModal: React.FC<JobFlowModalProps> = ({
   const [nodes, setNodes, onNodesChange] = useNodesState<FlowNodeData>(flow.nodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(flow.edges);
 
+  const handleResetLayout = useCallback(() => {
+    if (!job) return;
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.removeItem(`jobflow.positions.${job.id}`);
+      } catch {
+        // Ignore storage errors
+      }
+    }
+    nodePositionsRef.current = {};
+    resetPositionsRef.current = true;
+    setNodes(flow.nodes);
+  }, [job, flow.nodes, setNodes]);
+
   useEffect(() => {
     if (!job) return;
-    setNodes(flow.nodes);
+    setNodes((prev) => {
+      if (prev.length === 0) return flow.nodes;
+      if (Object.keys(nodePositionsRef.current).length === 0) {
+        const stored = getStoredPositions(job.id);
+        if (stored) nodePositionsRef.current = stored;
+      }
+      const positions = nodePositionsRef.current;
+      const prevById = new Map(prev.map((node) => [node.id, node]));
+      const nextNodes = flow.nodes.map((node) => {
+        const override = positions[node.id];
+        if (override) return { ...node, position: override };
+        if (!resetPositionsRef.current) {
+          const previous = prevById.get(node.id);
+          if (previous) return { ...node, position: previous.position };
+        }
+        return node;
+      });
+      resetPositionsRef.current = false;
+      return nextNodes;
+    });
     setEdges(flow.edges);
-    setActiveNodeId("hub");
-  }, [flow.nodes, flow.edges, job, setNodes, setEdges]);
+    setActiveNodeId((current) => current ?? "hub");
+  }, [flow.nodes, flow.edges, job, setNodes, setEdges, getStoredPositions]);
 
   useEffect(() => {
     if (!open) setActiveNodeId("hub");
   }, [open]);
+
+  useEffect(() => {
+    if (nodes.length === 0) return;
+    const positions = nodePositionsRef.current;
+    nodes.forEach((node) => {
+      positions[node.id] = node.position;
+    });
+    if (!job || typeof window === "undefined") return;
+    try {
+      localStorage.setItem(`jobflow.positions.${job.id}`, JSON.stringify(positions));
+    } catch {
+      // Ignore storage errors
+    }
+  }, [nodes, job?.id]);
 
   const selectedNode = nodes.find((node) => node.id === activeNodeId) ?? nodes[0];
   const inspector = selectedNode?.data?.inspector;
@@ -1145,6 +1222,9 @@ export const JobFlowModal: React.FC<JobFlowModalProps> = ({
               <div className="text-xs text-muted-foreground">{job.employer}</div>
             </div>
             <div className="flex items-center gap-2">
+              <Button size="sm" variant="outline" className="h-8 text-xs" onClick={handleResetLayout}>
+                Reset layout
+              </Button>
               {applyUrl && (
                 <Button asChild size="sm" variant="outline" className="h-8 text-xs">
                   <a href={applyUrl} target="_blank" rel="noopener noreferrer">
@@ -1172,7 +1252,7 @@ export const JobFlowModal: React.FC<JobFlowModalProps> = ({
                   setActiveNodeId(node.id);
                 }}
                 nodeTypes={{ jobHub: JobHubNode, jobPlugin: JobPluginNode, stageHeader: StageHeaderNode }}
-                nodesDraggable={false}
+                nodesDraggable
                 nodesConnectable={false}
                 elementsSelectable
                 fitView
