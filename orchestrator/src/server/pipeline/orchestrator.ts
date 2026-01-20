@@ -321,8 +321,8 @@ export async function runPipeline(config: Partial<PipelineConfig> = {}): Promise
       await jobsRepo.updateJob(job.id, {
         suitabilityScore: score,
         suitabilityReason: reason,
-        ...(sponsorMatchScore !== undefined && { sponsorMatchScore }),
-        ...(sponsorMatchNames !== undefined && { sponsorMatchNames }),
+        sponsorMatchScore,
+        sponsorMatchNames,
       });
     }
 
