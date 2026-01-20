@@ -143,7 +143,7 @@ describe('AI Service Resilience', () => {
                 })
             };
             vi.mocked(global.fetch).mockResolvedValue(mockResponse as any);
-            const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => { });
+            vi.spyOn(console, 'error').mockImplementation(() => { });
 
             const result = await scoreJobSuitability(mockJob, mockProfile);
 
