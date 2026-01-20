@@ -7,6 +7,7 @@ import {
   normalizeResumeProjectsSettings,
   resolveResumeProjectsSettings,
 } from '../../services/resumeProjects.js';
+import { listResumes } from '../../services/rxresume.js';
 
 export const settingsRouter = Router();
 
@@ -299,30 +300,7 @@ settingsRouter.patch('/', async (req: Request, res: Response) => {
  */
 settingsRouter.get('/rx-resumes', async (_req: Request, res: Response) => {
   try {
-    const apiKey = process.env.RXRESUME_API_KEY;
-    if (!apiKey) {
-      return res.status(400).json({ success: false, error: 'RXRESUME_API_KEY not configured in environment' });
-    }
-
-    const baseUrl = process.env.RXRESUME_URL || 'https://rxresu.me';
-    // Remove trailing slash if present
-    const cleanBaseUrl = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
-
-    console.log(`🔍 Fetching resumes from Reactive Resume at ${cleanBaseUrl}/api/resume...`);
-
-    const response = await fetch(`${cleanBaseUrl}/api/resume`, {
-      headers: {
-        'x-api-key': apiKey,
-        'Content-Type': 'application/json',
-      },
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({ message: response.statusText }));
-      throw new Error(`Reactive Resume API error (${response.status}): ${errorData.message || response.statusText}`);
-    }
-
-    const resumes = await response.json();
+    const resumes = await listResumes();
     res.json({ success: true, resumes });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';

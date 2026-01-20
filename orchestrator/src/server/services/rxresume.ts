@@ -22,8 +22,8 @@ export async function fetchRxResume(path: string, options: RequestInit = {}): Pr
     const baseUrl = process.env.RXRESUME_URL || 'https://rxresu.me';
     const cleanBaseUrl = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
 
-    // The API endpoints are at /api/*
-    const url = `${cleanBaseUrl}/api${path}`;
+    // The API endpoints are at /api/openapi/*
+    const url = `${cleanBaseUrl}/api/openapi${path}`;
 
     const headers = {
         'x-api-key': apiKey,
@@ -82,4 +82,10 @@ export async function deleteResume(id: string): Promise<void> {
 export async function exportResumePdf(id: string): Promise<string> {
     const result = await fetchRxResume(`/printer/resume/${id}/pdf`);
     return result.url;
+}
+/**
+ * List all resumes.
+ */
+export async function listResumes(): Promise<{ id: string; name: string }[]> {
+    return fetchRxResume('/resume');
 }
