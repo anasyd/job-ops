@@ -58,7 +58,7 @@ export function buildDefaultResumeProjectsSettings(
     .filter((id) => !lockedSet.has(id));
 
   const total = catalog.length;
-  const preferredMax = Math.max(lockedProjectIds.length, 4);
+  const preferredMax = Math.max(lockedProjectIds.length, 3);
   const maxProjects = total === 0 ? 0 : Math.min(total, preferredMax);
 
   return normalizeResumeProjectsSettings(
