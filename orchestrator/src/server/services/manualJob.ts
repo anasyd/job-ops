@@ -125,41 +125,23 @@ OUTPUT FORMAT (JSON ONLY):
 `.trim();
 }
 
-function normalizeDraft(parsed: Record<string, unknown>): ManualJobDraft {
-  const fields: Array<keyof ManualJobDraft> = [
-    'title',
-    'employer',
-    'location',
-    'salary',
-    'deadline',
-    'jobUrl',
-    'applicationLink',
-    'jobType',
-    'jobLevel',
-    'jobFunction',
-    'disciplines',
-    'degreeRequired',
-    'starting',
-  ];
-
+function normalizeDraft(parsed: ManualJobApiResponse): ManualJobDraft {
   const out: ManualJobDraft = {};
 
-  for (const field of fields) {
-    const value = toCleanString(parsed[field]);
-    if (value) out[field] = value;
-  }
+  // Map each field, only including non-empty strings
+  if (parsed.title?.trim()) out.title = parsed.title.trim();
+  if (parsed.employer?.trim()) out.employer = parsed.employer.trim();
+  if (parsed.location?.trim()) out.location = parsed.location.trim();
+  if (parsed.salary?.trim()) out.salary = parsed.salary.trim();
+  if (parsed.deadline?.trim()) out.deadline = parsed.deadline.trim();
+  if (parsed.jobUrl?.trim()) out.jobUrl = parsed.jobUrl.trim();
+  if (parsed.applicationLink?.trim()) out.applicationLink = parsed.applicationLink.trim();
+  if (parsed.jobType?.trim()) out.jobType = parsed.jobType.trim();
+  if (parsed.jobLevel?.trim()) out.jobLevel = parsed.jobLevel.trim();
+  if (parsed.jobFunction?.trim()) out.jobFunction = parsed.jobFunction.trim();
+  if (parsed.disciplines?.trim()) out.disciplines = parsed.disciplines.trim();
+  if (parsed.degreeRequired?.trim()) out.degreeRequired = parsed.degreeRequired.trim();
+  if (parsed.starting?.trim()) out.starting = parsed.starting.trim();
 
   return out;
-}
-
-function toCleanString(value: unknown): string | undefined {
-  if (value === null || value === undefined) return undefined;
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
-    return trimmed.length > 0 ? trimmed : undefined;
-  }
-  if (typeof value === 'number' || typeof value === 'boolean') {
-    return String(value);
-  }
-  return undefined;
 }
