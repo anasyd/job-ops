@@ -68,7 +68,7 @@ export const WebhooksSection: React.FC<WebhooksSectionProps> = ({
                 placeholder="Enter new secret"
                 disabled={isLoading || isSaving}
                 error={errors.webhookSecret?.message as string | undefined}
-                helper="Secret sent to webhook"
+                helper="Secret sent to webhook (Bearer token)"
                 current={formatSecretHint(webhookSecretHint)}
               />
             </div>
