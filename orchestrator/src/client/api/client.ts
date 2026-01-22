@@ -205,10 +205,7 @@ export async function updateSettings(update: {
   basicAuthPassword?: string | null
   ukvisajobsEmail?: string | null
   ukvisajobsPassword?: string | null
-  ukvisajobsHeadless?: boolean | null
   webhookSecret?: string | null
-  notionApiKey?: string | null
-  notionDatabaseId?: string | null
 }): Promise<AppSettings> {
   return fetchApi<AppSettings>('/settings', {
     method: 'PATCH',

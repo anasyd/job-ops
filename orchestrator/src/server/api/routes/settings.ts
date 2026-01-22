@@ -5,7 +5,6 @@ import {
   applyEnvValue,
   getEnvSettingsData,
   normalizeEnvInput,
-  serializeEnvBoolean,
 } from '@server/services/envSettings.js';
 import {
   extractProjectsFromProfile,

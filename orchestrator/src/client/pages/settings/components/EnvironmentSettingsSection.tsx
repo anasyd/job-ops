@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from "react"
-import { useFormContext, Controller } from "react-hook-form"
+import { useFormContext } from "react-hook-form"
 
 import { AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Input } from "@/components/ui/input"
 import { Separator } from "@/components/ui/separator"
 import { UpdateSettingsInput } from "@shared/settings-schema"
 import type { EnvSettingsValues } from "@client/pages/settings/types"
+import { SettingsInput } from "@client/pages/settings/components/SettingsInput"
 
 type EnvironmentSettingsSectionProps = {
   values: EnvSettingsValues
@@ -21,8 +21,8 @@ export const EnvironmentSettingsSection: React.FC<EnvironmentSettingsSectionProp
   isLoading,
   isSaving,
 }) => {
-  const { register, control, formState: { errors } } = useFormContext<UpdateSettingsInput>()
-  const { readable, private: privateValues, basicAuthActive } = values
+  const { register, formState: { errors } } = useFormContext<UpdateSettingsInput>()
+  const { private: privateValues, basicAuthActive } = values
 
   const [isBasicAuthEnabled, setIsBasicAuthEnabled] = useState(basicAuthActive)
 
@@ -41,33 +41,25 @@ export const EnvironmentSettingsSection: React.FC<EnvironmentSettingsSectionProp
           <div className="space-y-4">
             <div className="text-sm font-bold uppercase tracking-wider text-muted-foreground">External Services</div>
             <div className="grid gap-4 md:grid-cols-2">
-              <div className="space-y-2">
-                <div className="text-sm font-medium">OpenRouter API key</div>
-                <Input
-                  {...register("openrouterApiKey")}
-                  type="password"
-                  placeholder="Enter new key"
-                  disabled={isLoading || isSaving}
-                />
-                {errors.openrouterApiKey && <p className="text-xs text-destructive">{errors.openrouterApiKey.message}</p>}
-                <div className="text-xs text-muted-foreground">
-                  Current: <span className="font-mono">{formatSecretHint(privateValues.openrouterApiKeyHint)}</span>
-                </div>
-              </div>
+              <SettingsInput
+                label="OpenRouter API key"
+                inputProps={register("openrouterApiKey")}
+                type="password"
+                placeholder="Enter new key"
+                disabled={isLoading || isSaving}
+                error={errors.openrouterApiKey?.message as string | undefined}
+                current={formatSecretHint(privateValues.openrouterApiKeyHint)}
+              />
 
-              <div className="space-y-2">
-                <div className="text-sm font-medium">Webhook secret</div>
-                <Input
-                  {...register("webhookSecret")}
-                  type="password"
-                  placeholder="Enter new secret"
-                  disabled={isLoading || isSaving}
-                />
-                {errors.webhookSecret && <p className="text-xs text-destructive">{errors.webhookSecret.message}</p>}
-                <div className="text-xs text-muted-foreground">
-                  Current: <span className="font-mono">{formatSecretHint(privateValues.webhookSecretHint)}</span>
-                </div>
-              </div>
+              <SettingsInput
+                label="Webhook secret"
+                inputProps={register("webhookSecret")}
+                type="password"
+                placeholder="Enter new secret"
+                disabled={isLoading || isSaving}
+                error={errors.webhookSecret?.message as string | undefined}
+                current={formatSecretHint(privateValues.webhookSecretHint)}
+              />
             </div>
           </div>
 
@@ -80,56 +72,44 @@ export const EnvironmentSettingsSection: React.FC<EnvironmentSettingsSectionProp
             <div className="space-y-4">
               <div className="text-sm font-semibold">RxResume</div>
               <div className="grid gap-4 md:grid-cols-2">
-                <div className="space-y-2">
-                  <div className="text-sm">Email</div>
-                  <Input
-                    {...register("rxresumeEmail")}
-                    placeholder="you@example.com"
-                    disabled={isLoading || isSaving}
-                  />
-                  {errors.rxresumeEmail && <p className="text-xs text-destructive">{errors.rxresumeEmail.message}</p>}
-                </div>
-                <div className="space-y-2">
-                  <div className="text-sm">Password</div>
-                  <Input
-                    {...register("rxresumePassword")}
-                    type="password"
-                    placeholder="Enter new password"
-                    disabled={isLoading || isSaving}
-                  />
-                  {errors.rxresumePassword && <p className="text-xs text-destructive">{errors.rxresumePassword.message}</p>}
-                  <div className="text-xs text-muted-foreground">
-                    Current: <span className="font-mono">{formatSecretHint(privateValues.rxresumePasswordHint)}</span>
-                  </div>
-                </div>
+                <SettingsInput
+                  label="Email"
+                  inputProps={register("rxresumeEmail")}
+                  placeholder="you@example.com"
+                  disabled={isLoading || isSaving}
+                  error={errors.rxresumeEmail?.message as string | undefined}
+                />
+                <SettingsInput
+                  label="Password"
+                  inputProps={register("rxresumePassword")}
+                  type="password"
+                  placeholder="Enter new password"
+                  disabled={isLoading || isSaving}
+                  error={errors.rxresumePassword?.message as string | undefined}
+                  current={formatSecretHint(privateValues.rxresumePasswordHint)}
+                />
               </div>
             </div>
 
             <div className="space-y-4">
               <div className="text-sm font-semibold">UKVisaJobs</div>
               <div className="grid gap-4 md:grid-cols-2">
-                <div className="space-y-2">
-                  <div className="text-sm">Email</div>
-                  <Input
-                    {...register("ukvisajobsEmail")}
-                    placeholder="you@example.com"
-                    disabled={isLoading || isSaving}
-                  />
-                  {errors.ukvisajobsEmail && <p className="text-xs text-destructive">{errors.ukvisajobsEmail.message}</p>}
-                </div>
-                <div className="space-y-2">
-                  <div className="text-sm">Password</div>
-                  <Input
-                    {...register("ukvisajobsPassword")}
-                    type="password"
-                    placeholder="Enter new password"
-                    disabled={isLoading || isSaving}
-                  />
-                  {errors.ukvisajobsPassword && <p className="text-xs text-destructive">{errors.ukvisajobsPassword.message}</p>}
-                  <div className="text-xs text-muted-foreground">
-                    Current: <span className="font-mono">{formatSecretHint(privateValues.ukvisajobsPasswordHint)}</span>
-                  </div>
-                </div>
+                <SettingsInput
+                  label="Email"
+                  inputProps={register("ukvisajobsEmail")}
+                  placeholder="you@example.com"
+                  disabled={isLoading || isSaving}
+                  error={errors.ukvisajobsEmail?.message as string | undefined}
+                />
+                <SettingsInput
+                  label="Password"
+                  inputProps={register("ukvisajobsPassword")}
+                  type="password"
+                  placeholder="Enter new password"
+                  disabled={isLoading || isSaving}
+                  error={errors.ukvisajobsPassword?.message as string | undefined}
+                  current={formatSecretHint(privateValues.ukvisajobsPasswordHint)}
+                />
               </div>
             </div>
           </div>
@@ -161,29 +141,23 @@ export const EnvironmentSettingsSection: React.FC<EnvironmentSettingsSectionProp
 
             {isBasicAuthEnabled && (
               <div className="grid gap-4 md:grid-cols-2 pt-2">
-                <div className="space-y-2">
-                  <div className="text-sm">Username</div>
-                  <Input
-                    {...register("basicAuthUser")}
-                    placeholder="username"
-                    disabled={isLoading || isSaving}
-                  />
-                  {errors.basicAuthUser && <p className="text-xs text-destructive">{errors.basicAuthUser.message}</p>}
-                </div>
+                <SettingsInput
+                  label="Username"
+                  inputProps={register("basicAuthUser")}
+                  placeholder="username"
+                  disabled={isLoading || isSaving}
+                  error={errors.basicAuthUser?.message as string | undefined}
+                />
 
-                <div className="space-y-2">
-                  <div className="text-sm">Password</div>
-                  <Input
-                    {...register("basicAuthPassword")}
-                    type="password"
-                    placeholder="Enter new password"
-                    disabled={isLoading || isSaving}
-                  />
-                  {errors.basicAuthPassword && <p className="text-xs text-destructive">{errors.basicAuthPassword.message}</p>}
-                  <div className="text-xs text-muted-foreground">
-                    Current: <span className="font-mono">{formatSecretHint(privateValues.basicAuthPasswordHint)}</span>
-                  </div>
-                </div>
+                <SettingsInput
+                  label="Password"
+                  inputProps={register("basicAuthPassword")}
+                  type="password"
+                  placeholder="Enter new password"
+                  disabled={isLoading || isSaving}
+                  error={errors.basicAuthPassword?.message as string | undefined}
+                  current={formatSecretHint(privateValues.basicAuthPasswordHint)}
+                />
               </div>
             )}
           </div>
@@ -192,4 +166,3 @@ export const EnvironmentSettingsSection: React.FC<EnvironmentSettingsSectionProp
     </AccordionItem>
   )
 }
-

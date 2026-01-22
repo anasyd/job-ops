@@ -102,10 +102,8 @@ const baseSettings: AppSettings = {
   basicAuthPasswordHint: null,
   ukvisajobsEmail: "",
   ukvisajobsPasswordHint: null,
-  ukvisajobsHeadless: true,
   webhookSecretHint: null,
-  notionApiKeyHint: null,
-  notionDatabaseId: "",
+  basicAuthActive: false,
 }
 
 const renderPage = () => {

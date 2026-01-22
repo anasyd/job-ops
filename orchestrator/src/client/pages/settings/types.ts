@@ -28,8 +28,6 @@ export type EnvSettingsValues = {
     rxresumeEmail: string
     ukvisajobsEmail: string
     basicAuthUser: string
-    notionDatabaseId: string
-    ukvisajobsHeadless: boolean
   }
   private: {
     openrouterApiKeyHint: string | null

@@ -2,10 +2,9 @@ import React from "react"
 import { useFormContext } from "react-hook-form"
 
 import { AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
-import { Input } from "@/components/ui/input"
-import { Separator } from "@/components/ui/separator"
 import { UpdateSettingsInput } from "@shared/settings-schema"
 import type { WebhookValues } from "@client/pages/settings/types"
+import { SettingsInput } from "@client/pages/settings/components/SettingsInput"
 
 type JobCompleteWebhookSectionProps = {
   values: WebhookValues
@@ -28,31 +27,15 @@ export const JobCompleteWebhookSection: React.FC<JobCompleteWebhookSectionProps>
       </AccordionTrigger>
       <AccordionContent className="pb-4">
         <div className="space-y-4">
-          <div className="space-y-2">
-            <div className="text-sm font-medium">Job completion webhook URL</div>
-            <Input
-              {...register("jobCompleteWebhookUrl")}
-              placeholder={defaultJobCompleteWebhookUrl || "https://..."}
-              disabled={isLoading || isSaving}
-            />
-            {errors.jobCompleteWebhookUrl && <p className="text-xs text-destructive">{errors.jobCompleteWebhookUrl.message}</p>}
-            <div className="text-xs text-muted-foreground">
-              When set, the server sends a POST when you mark a job as applied (includes the job description).
-            </div>
-          </div>
-
-          <Separator />
-
-          <div className="grid gap-2 text-sm sm:grid-cols-2">
-            <div>
-              <div className="text-xs text-muted-foreground">Effective</div>
-              <div className="break-words font-mono text-xs">{effectiveJobCompleteWebhookUrl || "—"}</div>
-            </div>
-            <div>
-              <div className="text-xs text-muted-foreground">Default (env)</div>
-              <div className="break-words font-mono text-xs">{defaultJobCompleteWebhookUrl || "—"}</div>
-            </div>
-          </div>
+          <SettingsInput
+            label="Job completion webhook URL"
+            inputProps={register("jobCompleteWebhookUrl")}
+            placeholder={defaultJobCompleteWebhookUrl || "https://..."}
+            disabled={isLoading || isSaving}
+            error={errors.jobCompleteWebhookUrl?.message as string | undefined}
+            helper={`When set, the server sends a POST when you mark a job as applied (includes the job description). Default: ${defaultJobCompleteWebhookUrl || "—"}.`}
+            current={effectiveJobCompleteWebhookUrl || "—"}
+          />
         </div>
       </AccordionContent>
     </AccordionItem>
