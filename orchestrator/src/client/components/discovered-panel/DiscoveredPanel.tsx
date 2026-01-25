@@ -7,6 +7,7 @@ import { DecideMode } from "./DecideMode";
 import { EmptyState } from "./EmptyState";
 import { ProcessingState } from "./ProcessingState";
 import { TailorMode } from "./TailorMode";
+import { useRescoreJob } from "../../hooks/useRescoreJob";
 
 type PanelMode = "decide" | "tailor";
 
@@ -24,6 +25,7 @@ export const DiscoveredPanel: React.FC<DiscoveredPanelProps> = ({
   const [mode, setMode] = useState<PanelMode>("decide");
   const [isSkipping, setIsSkipping] = useState(false);
   const [isFinalizing, setIsFinalizing] = useState(false);
+  const { isRescoring, rescoreJob } = useRescoreJob(onJobUpdated);
 
   useEffect(() => {
     setMode("decide");
@@ -69,6 +71,8 @@ export const DiscoveredPanel: React.FC<DiscoveredPanelProps> = ({
     }
   };
 
+  const handleRescore = () => rescoreJob(job?.id);
+
   if (!job) {
     return <EmptyState />;
   }
@@ -85,6 +89,8 @@ export const DiscoveredPanel: React.FC<DiscoveredPanelProps> = ({
           onTailor={() => setMode("tailor")}
           onSkip={handleSkip}
           isSkipping={isSkipping}
+          onRescore={handleRescore}
+          isRescoring={isRescoring}
           onCheckSponsor={async () => {
             await api.checkSponsor(job.id);
             await onJobUpdated();
