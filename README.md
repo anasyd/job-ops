@@ -116,7 +116,7 @@ Self-hosting not your thing? A hosted version of JobOps is coming.
 - Managed updates
 - Self-hosted will always be free and open source
 
-👉 Join the waitlist at https://try.jobops.app?utm_source=github&utm_medium=readme&utm_campaign=waitlist
+👉 Join the waitlist at [https://try.jobops.app](https://try.jobops.app?utm_source=github&utm_medium=readme&utm_campaign=waitlist)
 
 ## Contributing
 
