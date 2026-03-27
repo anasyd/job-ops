@@ -68,7 +68,7 @@ function createBasicAuthGuard() {
   function requiresAuth(method: string, path: string): boolean {
     if (isPublicReadOnlyRoute(method, path)) return false;
     if (path.startsWith("/api/tracer-links")) {
-      return method.toUpperCase() !== "OPTIONS";
+      return !["GET", "HEAD", "OPTIONS"].includes(method.toUpperCase());
     }
     return !["GET", "HEAD", "OPTIONS"].includes(method.toUpperCase());
   }
