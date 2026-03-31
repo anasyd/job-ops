@@ -13,6 +13,40 @@ export interface ResumeProjectsSettings {
 }
 
 export type RxResumeMode = "v4" | "v5";
+export const PDF_RENDERER_VALUES = ["rxresume", "latex"] as const;
+export type PdfRenderer = (typeof PDF_RENDERER_VALUES)[number];
+export const PDF_RENDERER_LABELS: Record<PdfRenderer, string> = {
+  rxresume: "RxResume export",
+  latex: "Local LaTeX (Jake template)",
+};
+
+export const CHAT_STYLE_LANGUAGE_MODE_VALUES = [
+  "manual",
+  "match-resume",
+] as const;
+
+export type ChatStyleLanguageMode =
+  (typeof CHAT_STYLE_LANGUAGE_MODE_VALUES)[number];
+
+export const CHAT_STYLE_MANUAL_LANGUAGE_VALUES = [
+  "english",
+  "german",
+  "french",
+  "spanish",
+] as const;
+
+export type ChatStyleManualLanguage =
+  (typeof CHAT_STYLE_MANUAL_LANGUAGE_VALUES)[number];
+
+export const CHAT_STYLE_MANUAL_LANGUAGE_LABELS: Record<
+  ChatStyleManualLanguage,
+  string
+> = {
+  english: "English",
+  german: "German",
+  french: "French",
+  spanish: "Spanish",
+};
 
 export interface ResumeProfile {
   basics?: {
@@ -99,6 +133,7 @@ export interface ProfileStatusResponse {
 export interface ValidationResult {
   valid: boolean;
   message: string | null;
+  status?: number | null;
 }
 
 export interface DemoInfoResponse {
@@ -121,19 +156,31 @@ export interface AppSettings {
   pipelineWebhookUrl: Resolved<string>;
   jobCompleteWebhookUrl: Resolved<string>;
   resumeProjects: Resolved<ResumeProjectsSettings>;
+  pdfRenderer: Resolved<PdfRenderer>;
   ukvisajobsMaxJobs: Resolved<number>;
   adzunaMaxJobsPerTerm: Resolved<number>;
   gradcrackerMaxJobsPerTerm: Resolved<number>;
+  startupjobsMaxJobsPerTerm: Resolved<number>;
   searchTerms: Resolved<string[]>;
+  workplaceTypes: Resolved<Array<"remote" | "hybrid" | "onsite">>;
   blockedCompanyKeywords: Resolved<string[]>;
+  scoringInstructions: Resolved<string>;
+  ghostwriterSystemPromptTemplate: Resolved<string>;
+  tailoringPromptTemplate: Resolved<string>;
+  scoringPromptTemplate: Resolved<string>;
   searchCities: Resolved<string>;
   jobspyResultsWanted: Resolved<number>;
   jobspyCountryIndeed: Resolved<string>;
   showSponsorInfo: Resolved<boolean>;
+  renderMarkdownInJobDescriptions: Resolved<boolean>;
   chatStyleTone: Resolved<string>;
   chatStyleFormality: Resolved<string>;
   chatStyleConstraints: Resolved<string>;
   chatStyleDoNotUse: Resolved<string>;
+  chatStyleLanguageMode: Resolved<ChatStyleLanguageMode>;
+  chatStyleManualLanguage: Resolved<ChatStyleManualLanguage>;
+  chatStyleSummaryMaxWords: Resolved<number | null>;
+  chatStyleMaxKeywordsPerSkill: Resolved<number | null>;
   backupEnabled: Resolved<boolean>;
   backupHour: Resolved<number>;
   backupMaxCount: Resolved<number>;
@@ -152,6 +199,7 @@ export interface AppSettings {
   rxresumeBaseResumeIdV4: string | null;
   rxresumeBaseResumeIdV5: string | null;
   rxresumeEmail: string | null;
+  rxresumeUrl: string | null;
   ukvisajobsEmail: string | null;
   adzunaAppId: string | null;
   basicAuthUser: string | null;

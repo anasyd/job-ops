@@ -38,6 +38,8 @@ COPY orchestrator/package*.json ./orchestrator/
 COPY extractors/adzuna/package*.json ./extractors/adzuna/
 COPY extractors/hiringcafe/package*.json ./extractors/hiringcafe/
 COPY extractors/gradcracker/package*.json ./extractors/gradcracker/
+COPY extractors/startupjobs/package*.json ./extractors/startupjobs/
+COPY extractors/workingnomads/package*.json ./extractors/workingnomads/
 COPY extractors/ukvisajobs/package*.json ./extractors/ukvisajobs/
 
 # Install Node dependencies with npm cache (dev deps needed for build)
@@ -54,10 +56,13 @@ WORKDIR /app
 COPY shared ./shared
 COPY docs-site ./docs-site
 COPY orchestrator ./orchestrator
+COPY visa-sponsor-providers ./visa-sponsor-providers
 COPY extractors/adzuna ./extractors/adzuna
 COPY extractors/hiringcafe ./extractors/hiringcafe
 COPY extractors/gradcracker ./extractors/gradcracker
 COPY extractors/jobspy ./extractors/jobspy
+COPY extractors/startupjobs ./extractors/startupjobs
+COPY extractors/workingnomads ./extractors/workingnomads
 COPY extractors/ukvisajobs ./extractors/ukvisajobs
 
 # Build documentation site bundle
@@ -73,12 +78,16 @@ RUN npm run build:client
 # ============================================================================
 FROM node:22-slim AS production
 
+ARG TARGETARCH
+
 ENV DEBIAN_FRONTEND=noninteractive
 ENV NODE_ENV=production
 ENV PORT=3001
 ENV PYTHON_PATH=/usr/bin/python3
 ENV DATA_DIR=/app/data
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+ENV PATH=/root/.local/bin:${PATH}
+ENV TECTONIC_VERSION=0.15.0
 
 # Install only runtime dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -89,6 +98,23 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libdbus-glib-1-2 libxt6 libx11-xcb1 libasound2 \
     curl && \
     rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*
+
+# Install Tectonic for local LaTeX resume rendering.
+# Upstream publishes a musl Linux ARM build but not a glibc one, so map
+# Docker's target architecture to the matching release asset explicitly.
+RUN set -eux; \
+    case "${TARGETARCH}" in \
+        amd64) tectonic_arch="x86_64-unknown-linux-gnu" ;; \
+        arm64) tectonic_arch="aarch64-unknown-linux-musl" ;; \
+        *) echo "Unsupported TARGETARCH for Tectonic: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac; \
+    tectonic_asset="tectonic-${TECTONIC_VERSION}-${tectonic_arch}.tar.gz"; \
+    curl --proto '=https' --tlsv1.2 -fsSL \
+        "https://github.com/tectonic-typesetting/tectonic/releases/download/tectonic%40${TECTONIC_VERSION}/${tectonic_asset}" \
+        -o /tmp/tectonic.tar.gz; \
+    tar -xzf /tmp/tectonic.tar.gz -C /tmp; \
+    install -m 0755 "/tmp/tectonic" /usr/local/bin/tectonic; \
+    rm -f /tmp/tectonic.tar.gz /tmp/tectonic
 
 WORKDIR /app
 
@@ -104,6 +130,8 @@ COPY orchestrator/package*.json ./orchestrator/
 COPY extractors/adzuna/package*.json ./extractors/adzuna/
 COPY extractors/hiringcafe/package*.json ./extractors/hiringcafe/
 COPY extractors/gradcracker/package*.json ./extractors/gradcracker/
+COPY extractors/startupjobs/package*.json ./extractors/startupjobs/
+COPY extractors/workingnomads/package*.json ./extractors/workingnomads/
 COPY extractors/ukvisajobs/package*.json ./extractors/ukvisajobs/
 
 # Install production Node dependencies only
@@ -116,10 +144,13 @@ COPY --from=builder /app/orchestrator/dist ./orchestrator/dist
 COPY --from=builder /app/docs-site/build ./orchestrator/dist/docs
 COPY shared ./shared
 COPY orchestrator ./orchestrator
+COPY visa-sponsor-providers ./visa-sponsor-providers
 COPY extractors/adzuna ./extractors/adzuna
 COPY extractors/hiringcafe ./extractors/hiringcafe
 COPY extractors/gradcracker ./extractors/gradcracker
 COPY extractors/jobspy ./extractors/jobspy
+COPY extractors/startupjobs ./extractors/startupjobs
+COPY extractors/workingnomads ./extractors/workingnomads
 COPY extractors/ukvisajobs ./extractors/ukvisajobs
 
 # Reuse Camoufox binaries from builder instead of fetching again

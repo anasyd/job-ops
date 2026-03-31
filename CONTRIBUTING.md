@@ -34,6 +34,15 @@ npm --workspace orchestrator run db:migrate
 npm --workspace orchestrator run dev
 ```
 
+If you are working with extractors that use Glassdoor, Indeed, or LinkedIn (powered by python-jobspy), set up the Python venv once:
+
+```bash
+python3 -m venv extractors/jobspy/.venv
+extractors/jobspy/.venv/bin/pip install -r extractors/jobspy/requirements.txt
+```
+
+The runner auto-detects the venv — no need to set `PYTHON_PATH`.
+
 If you are editing docs:
 
 ```bash
@@ -53,6 +62,26 @@ Local URLs:
 3. If the change is user-visible, update docs (or link the relevant docs update in the same PR).
 4. Include screenshots or short clips for UI changes when helpful.
 5. Mention any tradeoffs or follow-up work in the PR description.
+
+## Releases
+
+Releases are driven from GitHub Actions.
+
+1. Open the `release` workflow in GitHub Actions.
+2. Enter the next version as `x.y.z` (for example `0.1.30`).
+3. Optionally enter a separate release title for GitHub (for example `Google Dorks!`).
+4. Run the workflow.
+
+The workflow will:
+
+- bump `orchestrator/package.json`
+- update `package-lock.json`
+- commit the version bump to `main`
+- create and push tag `vX.Y.Z`
+- publish the `ghcr.io/.../job-ops` image for that release
+- create the GitHub release using either the custom title or `vX.Y.Z`
+
+The app version shown in the UI is sourced from `orchestrator/package.json`, so the release version, tag, and displayed app version stay aligned even when the GitHub release title is customized separately.
 
 ## Validation Before PR (CI-Parity Checks)
 

@@ -1,3 +1,4 @@
+import { getDefaultPromptTemplate } from "../prompt-template-definitions";
 import type {
   ApplicationTask,
   AppSettings,
@@ -147,15 +148,26 @@ export const createAppSettings = (
     },
     override: null,
   },
+  pdfRenderer: {
+    value: "rxresume",
+    default: "rxresume",
+    override: null,
+  },
   rxresumeBaseResumeId: null,
   rxresumeBaseResumeIdV4: null,
   rxresumeBaseResumeIdV5: null,
   ukvisajobsMaxJobs: { value: 50, default: 50, override: null },
   adzunaMaxJobsPerTerm: { value: 50, default: 50, override: null },
   gradcrackerMaxJobsPerTerm: { value: 50, default: 50, override: null },
+  startupjobsMaxJobsPerTerm: { value: 50, default: 50, override: null },
   searchTerms: {
     value: ["Software Engineer"],
     default: ["Software Engineer"],
+    override: null,
+  },
+  workplaceTypes: {
+    value: ["remote", "hybrid", "onsite"],
+    default: ["remote", "hybrid", "onsite"],
     override: null,
   },
   blockedCompanyKeywords: {
@@ -163,9 +175,29 @@ export const createAppSettings = (
     default: [],
     override: null,
   },
+  scoringInstructions: {
+    value: "",
+    default: "",
+    override: null,
+  },
+  ghostwriterSystemPromptTemplate: {
+    value: getDefaultPromptTemplate("ghostwriterSystemPromptTemplate"),
+    default: getDefaultPromptTemplate("ghostwriterSystemPromptTemplate"),
+    override: null,
+  },
+  tailoringPromptTemplate: {
+    value: getDefaultPromptTemplate("tailoringPromptTemplate"),
+    default: getDefaultPromptTemplate("tailoringPromptTemplate"),
+    override: null,
+  },
+  scoringPromptTemplate: {
+    value: getDefaultPromptTemplate("scoringPromptTemplate"),
+    default: getDefaultPromptTemplate("scoringPromptTemplate"),
+    override: null,
+  },
   searchCities: {
-    value: "United Kingdom",
-    default: "United Kingdom",
+    value: "",
+    default: "",
     override: null,
   },
   jobspyResultsWanted: { value: 20, default: 20, override: null },
@@ -175,6 +207,11 @@ export const createAppSettings = (
     override: null,
   },
   showSponsorInfo: { value: true, default: true, override: null },
+  renderMarkdownInJobDescriptions: {
+    value: true,
+    default: true,
+    override: null,
+  },
   chatStyleTone: {
     value: "professional",
     default: "professional",
@@ -183,9 +220,22 @@ export const createAppSettings = (
   chatStyleFormality: { value: "medium", default: "medium", override: null },
   chatStyleConstraints: { value: "", default: "", override: null },
   chatStyleDoNotUse: { value: "", default: "", override: null },
+  chatStyleLanguageMode: {
+    value: "manual",
+    default: "manual",
+    override: null,
+  },
+  chatStyleManualLanguage: {
+    value: "english",
+    default: "english",
+    override: null,
+  },
+  chatStyleSummaryMaxWords: { value: null, default: null, override: null },
+  chatStyleMaxKeywordsPerSkill: { value: null, default: null, override: null },
   llmApiKeyHint: null,
   rxresumeApiKeyHint: null,
   rxresumeEmail: null,
+  rxresumeUrl: null,
   rxresumePasswordHint: null,
   basicAuthUser: null,
   basicAuthPasswordHint: null,

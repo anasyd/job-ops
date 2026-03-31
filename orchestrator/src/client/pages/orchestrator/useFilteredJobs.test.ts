@@ -15,6 +15,65 @@ const baseJob = createJob({
 });
 
 describe("useFilteredJobs", () => {
+  it("keeps processing jobs visible in the all jobs tab", () => {
+    const jobs: Job[] = [
+      { ...baseJob, id: "in-progress", status: "in_progress" },
+      { ...baseJob, id: "processing", status: "processing" },
+      {
+        ...baseJob,
+        id: "closed",
+        status: "in_progress",
+        closedAt: 1741996800,
+      },
+    ];
+
+    const { result } = renderHook(() =>
+      useFilteredJobs(
+        jobs,
+        "all",
+        "all",
+        "all",
+        { mode: "at_least", min: null, max: null },
+        {
+          key: "score",
+          direction: "desc",
+        },
+      ),
+    );
+
+    expect(result.current.map((job) => job.id)).toEqual([
+      "in-progress",
+      "processing",
+    ]);
+  });
+
+  it("keeps processing jobs visible in the ready tab", () => {
+    const jobs: Job[] = [
+      { ...baseJob, id: "ready", status: "ready" },
+      { ...baseJob, id: "processing", status: "processing" },
+      { ...baseJob, id: "discovered", status: "discovered" },
+    ];
+
+    const { result } = renderHook(() =>
+      useFilteredJobs(
+        jobs,
+        "ready",
+        "all",
+        "all",
+        { mode: "at_least", min: null, max: null },
+        {
+          key: "score",
+          direction: "desc",
+        },
+      ),
+    );
+
+    expect(result.current.map((job) => job.id)).toEqual(
+      expect.arrayContaining(["ready", "processing"]),
+    );
+    expect(result.current).toHaveLength(2);
+  });
+
   it("filters by sponsor status categories", () => {
     const jobs: Job[] = [
       { ...baseJob, id: "confirmed", sponsorMatchScore: 99 },

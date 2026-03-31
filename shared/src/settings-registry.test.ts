@@ -1,7 +1,63 @@
 import { describe, expect, it } from "vitest";
-import { settingsRegistry } from "./settings-registry";
+import { getDefaultPromptTemplate } from "./prompt-template-definitions";
+import {
+  getDefaultModelForProvider,
+  settingsRegistry,
+} from "./settings-registry";
 
 describe("settingsRegistry helpers", () => {
+  describe("searchCities defaults", () => {
+    it("defaults to empty when no location env is configured", () => {
+      const previousSearchCities = process.env.SEARCH_CITIES;
+      const previousJobspyLocation = process.env.JOBSPY_LOCATION;
+
+      delete process.env.SEARCH_CITIES;
+      delete process.env.JOBSPY_LOCATION;
+
+      try {
+        expect(settingsRegistry.searchCities.default()).toBe("");
+      } finally {
+        if (previousSearchCities === undefined) {
+          delete process.env.SEARCH_CITIES;
+        } else {
+          process.env.SEARCH_CITIES = previousSearchCities;
+        }
+
+        if (previousJobspyLocation === undefined) {
+          delete process.env.JOBSPY_LOCATION;
+        } else {
+          process.env.JOBSPY_LOCATION = previousJobspyLocation;
+        }
+      }
+    });
+
+    it("uses explicit SEARCH_CITIES or legacy JOBSPY_LOCATION env values", () => {
+      const previousSearchCities = process.env.SEARCH_CITIES;
+      const previousJobspyLocation = process.env.JOBSPY_LOCATION;
+
+      process.env.SEARCH_CITIES = "Leeds|London";
+      process.env.JOBSPY_LOCATION = "Manchester";
+
+      try {
+        expect(settingsRegistry.searchCities.default()).toBe("Leeds|London");
+        delete process.env.SEARCH_CITIES;
+        expect(settingsRegistry.searchCities.default()).toBe("Manchester");
+      } finally {
+        if (previousSearchCities === undefined) {
+          delete process.env.SEARCH_CITIES;
+        } else {
+          process.env.SEARCH_CITIES = previousSearchCities;
+        }
+
+        if (previousJobspyLocation === undefined) {
+          delete process.env.JOBSPY_LOCATION;
+        } else {
+          process.env.JOBSPY_LOCATION = previousJobspyLocation;
+        }
+      }
+    });
+  });
+
   describe("string parsing (parseNonEmptyStringOrNull)", () => {
     it("returns null for undefined", () => {
       expect(settingsRegistry.model.parse(undefined)).toBeNull();
@@ -13,6 +69,18 @@ describe("settingsRegistry helpers", () => {
 
     it("returns the string for non-empty string", () => {
       expect(settingsRegistry.searchCities.parse("London")).toBe("London");
+    });
+
+    it("uses shared default prompt templates for prompt settings", () => {
+      expect(settingsRegistry.ghostwriterSystemPromptTemplate.default()).toBe(
+        getDefaultPromptTemplate("ghostwriterSystemPromptTemplate"),
+      );
+      expect(settingsRegistry.tailoringPromptTemplate.default()).toBe(
+        getDefaultPromptTemplate("tailoringPromptTemplate"),
+      );
+      expect(settingsRegistry.scoringPromptTemplate.default()).toBe(
+        getDefaultPromptTemplate("scoringPromptTemplate"),
+      );
     });
   });
 
@@ -54,6 +122,12 @@ describe("settingsRegistry helpers", () => {
       expect(settingsRegistry.showSponsorInfo.parse("false")).toBe(false);
       expect(settingsRegistry.showSponsorInfo.parse("")).toBeNull();
       expect(settingsRegistry.showSponsorInfo.parse(undefined)).toBeNull();
+      expect(settingsRegistry.renderMarkdownInJobDescriptions.parse("1")).toBe(
+        true,
+      );
+      expect(settingsRegistry.renderMarkdownInJobDescriptions.parse("0")).toBe(
+        false,
+      );
     });
 
     it("serializes bit bools correctly", () => {
@@ -61,6 +135,12 @@ describe("settingsRegistry helpers", () => {
       expect(settingsRegistry.showSponsorInfo.serialize(false)).toBe("0");
       expect(settingsRegistry.showSponsorInfo.serialize(null)).toBeNull();
       expect(settingsRegistry.showSponsorInfo.serialize(undefined)).toBeNull();
+      expect(
+        settingsRegistry.renderMarkdownInJobDescriptions.serialize(true),
+      ).toBe("1");
+      expect(
+        settingsRegistry.renderMarkdownInJobDescriptions.serialize(false),
+      ).toBe("0");
     });
   });
 
@@ -83,6 +163,19 @@ describe("settingsRegistry helpers", () => {
         '["dev","engineer"]',
       );
       expect(settingsRegistry.searchTerms.serialize(null)).toBeNull();
+    });
+
+    it("parses valid workplace type arrays", () => {
+      expect(
+        settingsRegistry.workplaceTypes.parse('["remote","onsite"]'),
+      ).toEqual(["remote", "onsite"]);
+    });
+
+    it("rejects invalid workplace type arrays", () => {
+      expect(
+        settingsRegistry.workplaceTypes.parse('["remote","satellite"]'),
+      ).toBeNull();
+      expect(settingsRegistry.workplaceTypes.parse("[]")).toBeNull();
     });
   });
 
@@ -115,6 +208,92 @@ describe("settingsRegistry helpers", () => {
 
     it("has env-backed v5 api key secret setting", () => {
       expect(settingsRegistry.rxresumeApiKey.envKey).toBe("RXRESUME_API_KEY");
+    });
+
+    it("has env-backed rxresumeUrl string setting", () => {
+      expect(settingsRegistry.rxresumeUrl.envKey).toBe("RXRESUME_URL");
+    });
+  });
+
+  describe("writing-style language settings", () => {
+    it("defaults to manual english", () => {
+      const previousLanguageMode = process.env.CHAT_STYLE_LANGUAGE_MODE;
+      const previousManualLanguage = process.env.CHAT_STYLE_MANUAL_LANGUAGE;
+
+      delete process.env.CHAT_STYLE_LANGUAGE_MODE;
+      delete process.env.CHAT_STYLE_MANUAL_LANGUAGE;
+
+      try {
+        expect(settingsRegistry.chatStyleLanguageMode.default()).toBe("manual");
+        expect(settingsRegistry.chatStyleManualLanguage.default()).toBe(
+          "english",
+        );
+      } finally {
+        if (previousLanguageMode === undefined) {
+          delete process.env.CHAT_STYLE_LANGUAGE_MODE;
+        } else {
+          process.env.CHAT_STYLE_LANGUAGE_MODE = previousLanguageMode;
+        }
+
+        if (previousManualLanguage === undefined) {
+          delete process.env.CHAT_STYLE_MANUAL_LANGUAGE;
+        } else {
+          process.env.CHAT_STYLE_MANUAL_LANGUAGE = previousManualLanguage;
+        }
+      }
+    });
+
+    it("parses and serializes supported language settings", () => {
+      expect(settingsRegistry.chatStyleLanguageMode.parse("manual")).toBe(
+        "manual",
+      );
+      expect(settingsRegistry.chatStyleLanguageMode.parse("match-resume")).toBe(
+        "match-resume",
+      );
+      expect(settingsRegistry.chatStyleLanguageMode.parse("auto")).toBeNull();
+      expect(settingsRegistry.chatStyleLanguageMode.parse("")).toBeNull();
+      expect(
+        settingsRegistry.chatStyleLanguageMode.serialize("match-resume"),
+      ).toBe("match-resume");
+      expect(settingsRegistry.chatStyleLanguageMode.serialize(null)).toBeNull();
+
+      expect(settingsRegistry.chatStyleManualLanguage.parse("english")).toBe(
+        "english",
+      );
+      expect(settingsRegistry.chatStyleManualLanguage.parse("german")).toBe(
+        "german",
+      );
+      expect(
+        settingsRegistry.chatStyleManualLanguage.parse("italian"),
+      ).toBeNull();
+      expect(settingsRegistry.chatStyleManualLanguage.parse("")).toBeNull();
+      expect(
+        settingsRegistry.chatStyleManualLanguage.serialize("spanish"),
+      ).toBe("spanish");
+      expect(
+        settingsRegistry.chatStyleManualLanguage.serialize(null),
+      ).toBeNull();
+    });
+  });
+
+  describe("LLM provider parsing", () => {
+    it("normalizes the documented openai-compatible alias", () => {
+      expect(settingsRegistry.llmProvider.parse("openai-compatible")).toBe(
+        "openai_compatible",
+      );
+      expect(settingsRegistry.llmProvider.parse("OPENAI-COMPATIBLE")).toBe(
+        "openai_compatible",
+      );
+    });
+
+    it("uses provider-specific default models", () => {
+      expect(getDefaultModelForProvider("openai")).toBe("gpt-5.4-mini");
+      expect(getDefaultModelForProvider("gemini")).toBe(
+        "google/gemini-3-flash-preview",
+      );
+      expect(getDefaultModelForProvider("openrouter")).toBe(
+        "google/gemini-3-flash-preview",
+      );
     });
   });
 });

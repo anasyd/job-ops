@@ -17,8 +17,13 @@ import {
   LLM_PROVIDERS,
   normalizeLlmProvider,
 } from "@client/pages/settings/utils";
+import { getDefaultModelForProvider } from "@shared/settings-registry";
 import type { UpdateSettingsInput } from "@shared/settings-schema.js";
-import type { RxResumeMode, ValidationResult } from "@shared/types.js";
+import type {
+  PdfRenderer,
+  RxResumeMode,
+  ValidationResult,
+} from "@shared/types.js";
 import { Check } from "lucide-react";
 import type React from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -57,8 +62,10 @@ type OnboardingFormData = {
   llmProvider: string;
   llmBaseUrl: string;
   llmApiKey: string;
+  pdfRenderer: PdfRenderer;
   rxresumeMode: RxResumeMode;
   rxresumeEmail: string;
+  rxresumeUrl: string;
   rxresumePassword: string;
   rxresumeApiKey: string;
   rxresumeBaseResumeId: string | null;
@@ -133,8 +140,10 @@ export const OnboardingGate: React.FC = () => {
         llmProvider: "",
         llmBaseUrl: "",
         llmApiKey: "",
+        pdfRenderer: "rxresume",
         rxresumeMode: "v5",
         rxresumeEmail: "",
+        rxresumeUrl: "",
         rxresumePassword: "",
         rxresumeApiKey: "",
         rxresumeBaseResumeId: null,
@@ -285,8 +294,10 @@ export const OnboardingGate: React.FC = () => {
         llmProvider: settings.llmProvider?.value || "",
         llmBaseUrl: settings.llmBaseUrl?.value || "",
         llmApiKey: "",
+        pdfRenderer: settings.pdfRenderer?.value ?? "rxresume",
         rxresumeMode: initialMode,
         rxresumeEmail: "",
+        rxresumeUrl: settings.rxresumeUrl ?? "",
         rxresumePassword: "",
         rxresumeApiKey: "",
         rxresumeBaseResumeId: selectedId,
@@ -420,6 +431,10 @@ export const OnboardingGate: React.FC = () => {
       const update: Partial<UpdateSettingsInput> = {
         llmProvider: normalizedProvider,
         llmBaseUrl: showBaseUrl ? baseUrlValue || null : null,
+        model: null,
+        modelScorer: null,
+        modelTailoring: null,
+        modelProjectSelection: null,
       };
 
       if (showApiKey && apiKeyValue) {
@@ -430,7 +445,13 @@ export const OnboardingGate: React.FC = () => {
       await api.updateSettings(update);
       await refreshSettings();
       setValue("llmApiKey", "");
-      toast.success("LLM provider connected");
+      const defaultModel = getDefaultModelForProvider(normalizedProvider);
+      toast.success("LLM provider connected", {
+        description:
+          normalizedProvider === "openai" || normalizedProvider === "gemini"
+            ? `Default for ${providerConfig.label}: ${defaultModel}.`
+            : "Select the model manually in Settings > Model.",
+      });
       return true;
     } catch (error) {
       const message =
@@ -469,7 +490,10 @@ export const OnboardingGate: React.FC = () => {
         persist: async (update) => {
           setIsSavingEnv(true);
           try {
-            await api.updateSettings(update);
+            await api.updateSettings({
+              ...update,
+              pdfRenderer: values.pdfRenderer,
+            });
             await refreshSettings();
           } finally {
             setIsSavingEnv(false);
@@ -531,6 +555,7 @@ export const OnboardingGate: React.FC = () => {
     try {
       setIsSavingEnv(true);
       await api.updateSettings({
+        pdfRenderer: values.pdfRenderer,
         rxresumeMode: values.rxresumeMode,
         rxresumeBaseResumeId: values.rxresumeBaseResumeId,
       });
@@ -710,7 +735,6 @@ export const OnboardingGate: React.FC = () => {
                         }}
                         placeholder={providerConfig.baseUrlPlaceholder}
                         helper={providerConfig.baseUrlHelper}
-                        current={settings?.llmBaseUrl?.value || "—"}
                         disabled={isSavingEnv}
                       />
                     )}
@@ -757,6 +781,10 @@ export const OnboardingGate: React.FC = () => {
                     checked: previous.checked,
                   }));
                 }}
+                pdfRenderer={watch("pdfRenderer")}
+                onPdfRendererChange={(renderer) =>
+                  setValue("pdfRenderer", renderer)
+                }
                 disabled={isSavingEnv}
                 showValidationStatus
                 validationStatuses={rxresumeVersionValidations}
@@ -768,6 +796,10 @@ export const OnboardingGate: React.FC = () => {
                 v5={{
                   apiKey: watch("rxresumeApiKey"),
                   onApiKeyChange: (value) => setValue("rxresumeApiKey", value),
+                }}
+                shared={{
+                  baseUrl: watch("rxresumeUrl"),
+                  onBaseUrlChange: (value) => setValue("rxresumeUrl", value),
                 }}
                 v4={{
                   email: watch("rxresumeEmail"),

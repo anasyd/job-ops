@@ -18,6 +18,7 @@ const sidebars: SidebarsConfig = {
         "workflows/find-jobs-and-apply-workflow",
         "workflows/post-application-workflow",
         "workflows/add-an-extractor",
+        "workflows/add-a-visa-sponsor-provider",
       ],
     },
     {
@@ -48,6 +49,8 @@ const sidebars: SidebarsConfig = {
         "extractors/jobspy",
         "extractors/adzuna",
         "extractors/hiring-cafe",
+        "extractors/startup-jobs",
+        "extractors/working-nomads",
         "extractors/manual",
         "extractors/ukvisajobs",
       ],

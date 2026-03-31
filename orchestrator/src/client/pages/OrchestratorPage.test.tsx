@@ -1,9 +1,11 @@
 import { createJob } from "@shared/testing/factories.js";
+import type { Job } from "@shared/types.js";
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { toast } from "sonner";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import * as api from "../api";
+import { _resetKeyboardAvailabilityForTests } from "../hooks/useKeyboardAvailability";
 import { renderWithQueryClient } from "../test/renderWithQueryClient";
 import { OrchestratorPage } from "./OrchestratorPage";
 import type { AutomaticRunValues } from "./orchestrator/automatic-run";
@@ -46,6 +48,7 @@ vi.mock("sonner", () => ({
 }));
 
 let mockIsPipelineRunning = false;
+let mockDemoMode = false;
 let mockPipelineTerminalEvent: {
   status: "completed" | "cancelled" | "failed";
   errorMessage: string | null;
@@ -61,6 +64,7 @@ let mockAutomaticRunValues: AutomaticRunValues = {
   runBudget: 150,
   country: "united kingdom",
   cityLocations: [],
+  workplaceTypes: ["remote", "hybrid", "onsite"],
 };
 
 const jobFixture = createJob({
@@ -93,9 +97,12 @@ const processingJob = createJob({
   status: "processing",
 });
 
-const createMatchMedia = (matches: boolean) =>
+let mockJobs = [jobFixture, job2, processingJob];
+let mockSelectedJob: Job | null = jobFixture;
+
+const createMatchMedia = (matches: boolean | Record<string, boolean>) =>
   vi.fn().mockImplementation((query: string) => ({
-    matches,
+    matches: typeof matches === "boolean" ? matches : (matches[query] ?? false),
     media: query,
     addEventListener: vi.fn(),
     removeEventListener: vi.fn(),
@@ -106,8 +113,8 @@ const createMatchMedia = (matches: boolean) =>
 
 vi.mock("./orchestrator/useOrchestratorData", () => ({
   useOrchestratorData: () => ({
-    jobs: [jobFixture, job2, processingJob],
-    selectedJob: jobFixture,
+    jobs: mockJobs,
+    selectedJob: mockSelectedJob,
     stats: {
       discovered: 1,
       processing: 1,
@@ -122,6 +129,17 @@ vi.mock("./orchestrator/useOrchestratorData", () => ({
     pipelineTerminalEvent: mockPipelineTerminalEvent,
     setIsRefreshPaused: vi.fn(),
     loadJobs: vi.fn(),
+  }),
+}));
+
+vi.mock("../hooks/useDemoInfo", () => ({
+  useDemoInfo: () => ({
+    demoMode: mockDemoMode,
+    resetCadenceHours: 6,
+    lastResetAt: null,
+    nextResetAt: null,
+    baselineVersion: null,
+    baselineName: null,
   }),
 }));
 
@@ -371,11 +389,15 @@ const pressKeyOn = (
 describe("OrchestratorPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    _resetKeyboardAvailabilityForTests();
     localStorage.clear();
     localStorage.setItem("has-seen-keyboard-shortcuts", "true");
+    mockDemoMode = false;
     mockIsPipelineRunning = false;
     mockPipelineTerminalEvent = null;
     mockPipelineSources = ["linkedin"];
+    mockJobs = [jobFixture, job2, processingJob];
+    mockSelectedJob = jobFixture;
     mockAutomaticRunValues = {
       topN: 12,
       minSuitabilityScore: 55,
@@ -383,6 +405,7 @@ describe("OrchestratorPage", () => {
       runBudget: 150,
       country: "united kingdom",
       cityLocations: [],
+      workplaceTypes: ["remote", "hybrid", "onsite"],
     };
   });
 
@@ -460,6 +483,43 @@ describe("OrchestratorPage", () => {
     // Wait for URL to update
     await waitFor(() => {
       expect(locationText()).toContain("/all/job-2");
+    });
+  });
+
+  it("preserves the selected job id when a refresh temporarily excludes it", async () => {
+    window.matchMedia = createMatchMedia(
+      true,
+    ) as unknown as typeof window.matchMedia;
+
+    const { rerender } = render(
+      <MemoryRouter initialEntries={["/jobs/ready/job-1"]}>
+        <LocationWatcher />
+        <Routes>
+          <Route path="/jobs/:tab" element={<OrchestratorPage />} />
+          <Route path="/jobs/:tab/:jobId" element={<OrchestratorPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("location")).toHaveTextContent("/ready/job-1");
+    });
+
+    mockJobs = [createJob({ ...jobFixture, id: "job-2", status: "ready" })];
+    mockSelectedJob = null;
+
+    rerender(
+      <MemoryRouter initialEntries={["/jobs/ready/job-1"]}>
+        <LocationWatcher />
+        <Routes>
+          <Route path="/jobs/:tab" element={<OrchestratorPage />} />
+          <Route path="/jobs/:tab/:jobId" element={<OrchestratorPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("location")).toHaveTextContent("/ready/job-1");
     });
   });
 
@@ -693,12 +753,14 @@ describe("OrchestratorPage", () => {
     await waitFor(() => {
       expect(api.updateSettings).toHaveBeenCalledWith({
         searchTerms: ["backend"],
+        workplaceTypes: ["remote", "hybrid", "onsite"],
         jobspyResultsWanted: 150,
         gradcrackerMaxJobsPerTerm: 150,
         ukvisajobsMaxJobs: 150,
         adzunaMaxJobsPerTerm: 150,
+        startupjobsMaxJobsPerTerm: 150,
         jobspyCountryIndeed: "united kingdom",
-        searchCities: "United Kingdom",
+        searchCities: null,
       });
     });
     expect(api.runPipeline).toHaveBeenCalledWith({
@@ -723,6 +785,7 @@ describe("OrchestratorPage", () => {
       runBudget: 150,
       country: "united kingdom",
       cityLocations: ["London", "Manchester"],
+      workplaceTypes: ["remote", "hybrid", "onsite"],
     };
 
     render(
@@ -757,6 +820,7 @@ describe("OrchestratorPage", () => {
       runBudget: 150,
       country: "united kingdom",
       cityLocations: ["Leeds", "Manchester"],
+      workplaceTypes: ["remote", "hybrid", "onsite"],
     };
 
     render(
@@ -791,6 +855,7 @@ describe("OrchestratorPage", () => {
       runBudget: 150,
       country: "united kingdom",
       cityLocations: ["Leeds", "Manchester"],
+      workplaceTypes: ["remote", "hybrid", "onsite"],
     };
 
     render(
@@ -897,6 +962,7 @@ describe("OrchestratorPage", () => {
       runBudget: 150,
       country: "united states",
       cityLocations: [],
+      workplaceTypes: ["remote", "hybrid", "onsite"],
     };
 
     render(
@@ -1033,13 +1099,16 @@ describe("OrchestratorPage", () => {
       );
     });
 
+    // Update mock so selectedJob matches the discovered tab — visibleSelectedJob
+    // filters out jobs whose status doesn't belong to the active tab.
+    mockSelectedJob = job2;
+
     fireEvent.click(screen.getByTestId("select-job-2"));
 
     pressKey("r");
     await waitFor(() => {
       expect(toast.message).toHaveBeenCalledWith("Moving job to Ready...");
-      // Mock useOrchestratorData returns selectedJob as job-1 always
-      expect(api.processJob).toHaveBeenCalledWith("job-1");
+      expect(api.processJob).toHaveBeenCalledWith("job-2");
     });
   });
 
@@ -1066,6 +1135,66 @@ describe("OrchestratorPage", () => {
     await waitFor(() => {
       expect(screen.getByTestId("help-dialog")).toHaveTextContent("closed");
     });
+  });
+
+  it("does not auto-open the keyboard shortcut dialog in demo mode", () => {
+    mockDemoMode = true;
+    localStorage.removeItem("has-seen-keyboard-shortcuts");
+    window.matchMedia = createMatchMedia(
+      true,
+    ) as unknown as typeof window.matchMedia;
+
+    render(
+      <MemoryRouter initialEntries={["/jobs/ready"]}>
+        <Routes>
+          <Route path="/jobs/:tab" element={<OrchestratorPage />} />
+          <Route path="/jobs/:tab/:jobId" element={<OrchestratorPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByTestId("help-dialog")).toHaveTextContent("closed");
+  });
+
+  it("does not auto-open the keyboard shortcut dialog on touch-only devices", () => {
+    localStorage.removeItem("has-seen-keyboard-shortcuts");
+    window.matchMedia = createMatchMedia({
+      "(min-width: 1024px)": true,
+      "(any-hover: hover)": false,
+      "(any-pointer: fine)": false,
+    }) as unknown as typeof window.matchMedia;
+
+    const maxTouchPointsDescriptor = Object.getOwnPropertyDescriptor(
+      Navigator.prototype,
+      "maxTouchPoints",
+    );
+    Object.defineProperty(Navigator.prototype, "maxTouchPoints", {
+      configurable: true,
+      get: () => 5,
+    });
+
+    try {
+      render(
+        <MemoryRouter initialEntries={["/jobs/ready"]}>
+          <Routes>
+            <Route path="/jobs/:tab" element={<OrchestratorPage />} />
+            <Route path="/jobs/:tab/:jobId" element={<OrchestratorPage />} />
+          </Routes>
+        </MemoryRouter>,
+      );
+
+      expect(screen.getByTestId("help-dialog")).toHaveTextContent("closed");
+    } finally {
+      if (maxTouchPointsDescriptor) {
+        Object.defineProperty(
+          Navigator.prototype,
+          "maxTouchPoints",
+          maxTouchPointsDescriptor,
+        );
+      } else {
+        Reflect.deleteProperty(Navigator.prototype, "maxTouchPoints");
+      }
+    }
   });
 
   it("disables other shortcuts while help dialog is open", async () => {

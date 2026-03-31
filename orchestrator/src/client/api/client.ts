@@ -9,6 +9,7 @@ import type {
   ApplicationTask,
   AppSettings,
   BackupInfo,
+  BranchInfo,
   DemoInfoResponse,
   Job,
   JobActionRequest,
@@ -559,7 +560,7 @@ export async function listJobChatThreads(jobId: string): Promise<{
 export async function listJobGhostwriterMessages(
   jobId: string,
   options?: { limit?: number; offset?: number },
-): Promise<{ messages: JobChatMessage[] }> {
+): Promise<{ messages: JobChatMessage[]; branches: BranchInfo[] }> {
   const params = new URLSearchParams();
   if (typeof options?.limit === "number") {
     params.set("limit", String(options.limit));
@@ -568,7 +569,7 @@ export async function listJobGhostwriterMessages(
     params.set("offset", String(options.offset));
   }
   const query = params.toString();
-  return fetchApi<{ messages: JobChatMessage[] }>(
+  return fetchApi<{ messages: JobChatMessage[]; branches: BranchInfo[] }>(
     `/jobs/${jobId}/chat/messages${query ? `?${query}` : ""}`,
   );
 }
@@ -671,6 +672,18 @@ export async function cancelJobChatRun(
   );
 }
 
+export async function resetJobGhostwriterConversation(
+  jobId: string,
+): Promise<{ deletedMessages: number; deletedRuns: number }> {
+  return fetchApi<{ deletedMessages: number; deletedRuns: number }>(
+    `/jobs/${jobId}/chat/reset`,
+    {
+      method: "POST",
+      body: JSON.stringify({}),
+    },
+  );
+}
+
 export async function cancelJobGhostwriterRun(
   jobId: string,
   runId: string,
@@ -731,6 +744,37 @@ export async function streamRegenerateJobGhostwriterMessage(
     {
       onEvent: handlers.onEvent,
       signal: input.signal,
+    },
+  );
+}
+
+export async function editJobGhostwriterMessage(
+  jobId: string,
+  messageId: string,
+  input: { content: string; signal?: AbortSignal },
+  handlers: {
+    onEvent: (event: JobChatStreamEvent) => void;
+  },
+): Promise<void> {
+  return streamSseEvents(
+    `/jobs/${jobId}/chat/messages/${messageId}/edit`,
+    { content: input.content, stream: true },
+    {
+      onEvent: handlers.onEvent,
+      signal: input.signal,
+    },
+  );
+}
+
+export async function switchJobGhostwriterBranch(
+  jobId: string,
+  messageId: string,
+): Promise<{ messages: JobChatMessage[]; branches: BranchInfo[] }> {
+  return fetchApi<{ messages: JobChatMessage[]; branches: BranchInfo[] }>(
+    `/jobs/${jobId}/chat/messages/${messageId}/switch-branch`,
+    {
+      method: "POST",
+      body: JSON.stringify({}),
     },
   );
 }
@@ -1292,6 +1336,18 @@ export async function validateLlm(input: {
   });
 }
 
+export async function getLlmModels(input?: {
+  provider?: string;
+  baseUrl?: string;
+  apiKey?: string;
+}): Promise<string[]> {
+  const data = await fetchApi<{ models: string[] }>("/settings/llm-models", {
+    method: "POST",
+    body: JSON.stringify(input ?? {}),
+  });
+  return data.models;
+}
+
 export async function validateRxresume(input?: {
   mode?: "v4" | "v5";
   email?: string;
@@ -1391,12 +1447,14 @@ export async function searchVisaSponsors(input: {
   query: string;
   limit?: number;
   minScore?: number;
+  country?: string;
 }): Promise<VisaSponsorSearchResponse> {
   if (input.query?.trim()) {
     trackProductEvent("visa_sponsor_search", {
       query_length_bucket: bucketQueryLength(input.query.trim()),
       limit: input.limit,
       min_score: input.minScore,
+      country: input.country ?? "all",
     });
   }
   return fetchApi<VisaSponsorSearchResponse>("/visa-sponsors/search", {
@@ -1407,9 +1465,12 @@ export async function searchVisaSponsors(input: {
 
 export async function getVisaSponsorOrganization(
   name: string,
+  providerId?: string,
 ): Promise<VisaSponsor[]> {
+  const params = new URLSearchParams();
+  if (providerId) params.set("providerId", providerId);
   return fetchApi<VisaSponsor[]>(
-    `/visa-sponsors/organization/${encodeURIComponent(name)}`,
+    `/visa-sponsors/organization/${encodeURIComponent(name)}${params.size ? `?${params.toString()}` : ""}`,
   );
 }
 

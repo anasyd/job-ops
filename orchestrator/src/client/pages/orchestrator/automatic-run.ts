@@ -5,6 +5,12 @@ import {
 import type { JobSource } from "@shared/types";
 
 export type AutomaticPresetId = "fast" | "balanced" | "detailed";
+export type WorkplaceType = "remote" | "hybrid" | "onsite";
+export const WORKPLACE_TYPE_OPTIONS: WorkplaceType[] = [
+  "remote",
+  "hybrid",
+  "onsite",
+];
 
 export interface AutomaticRunValues {
   topN: number;
@@ -13,6 +19,7 @@ export interface AutomaticRunValues {
   runBudget: number;
   country: string;
   cityLocations: string[];
+  workplaceTypes: WorkplaceType[];
 }
 
 export interface AutomaticPresetValues {
@@ -61,11 +68,29 @@ export interface AutomaticRunMemory {
   minSuitabilityScore: number;
 }
 
+export function normalizeWorkplaceTypes(
+  workplaceTypes: WorkplaceType[] | null | undefined,
+): WorkplaceType[] {
+  const seen = new Set<WorkplaceType>();
+  const out: WorkplaceType[] = [];
+
+  for (const workplaceType of workplaceTypes ?? []) {
+    if (!WORKPLACE_TYPE_OPTIONS.includes(workplaceType)) continue;
+    if (seen.has(workplaceType)) continue;
+    seen.add(workplaceType);
+    out.push(workplaceType);
+  }
+
+  return out.length > 0 ? out : [...WORKPLACE_TYPE_OPTIONS];
+}
+
 export interface ExtractorLimits {
   jobspyResultsWanted: number;
   gradcrackerMaxJobsPerTerm: number;
   ukvisajobsMaxJobs: number;
   adzunaMaxJobsPerTerm: number;
+  startupjobsMaxJobsPerTerm: number;
+  workingnomadsMaxJobsPerTerm: number;
 }
 
 export function deriveExtractorLimits(args: {
@@ -82,6 +107,8 @@ export function deriveExtractorLimits(args: {
   const includesUkVisaJobs = args.sources.includes("ukvisajobs");
   const includesAdzuna = args.sources.includes("adzuna");
   const includesHiringCafe = args.sources.includes("hiringcafe");
+  const includesStartupJobs = args.sources.includes("startupjobs");
+  const includesWorkingNomads = args.sources.includes("workingnomads");
 
   const weightedContributors =
     (includesIndeed ? termCount : 0) +
@@ -90,7 +117,9 @@ export function deriveExtractorLimits(args: {
     (includesGradcracker ? termCount : 0) +
     (includesUkVisaJobs ? 1 : 0) +
     (includesAdzuna ? termCount : 0) +
-    (includesHiringCafe ? termCount : 0);
+    (includesHiringCafe ? termCount : 0) +
+    (includesStartupJobs ? termCount : 0) +
+    (includesWorkingNomads ? termCount : 0);
 
   if (weightedContributors <= 0) {
     return {
@@ -98,6 +127,8 @@ export function deriveExtractorLimits(args: {
       gradcrackerMaxJobsPerTerm: budget,
       ukvisajobsMaxJobs: budget,
       adzunaMaxJobsPerTerm: budget,
+      startupjobsMaxJobsPerTerm: budget,
+      workingnomadsMaxJobsPerTerm: budget,
     };
   }
 
@@ -109,6 +140,8 @@ export function deriveExtractorLimits(args: {
     gradcrackerMaxJobsPerTerm: perUnit,
     ukvisajobsMaxJobs: Math.min(budget, perUnit + remainder),
     adzunaMaxJobsPerTerm: perUnit,
+    startupjobsMaxJobsPerTerm: perUnit,
+    workingnomadsMaxJobsPerTerm: perUnit,
   };
 }
 
@@ -173,6 +206,8 @@ export function calculateAutomaticEstimate(args: {
   const hasGlassdoor = sources.includes("glassdoor");
   const hasAdzuna = sources.includes("adzuna");
   const hasHiringCafe = sources.includes("hiringcafe");
+  const hasStartupJobs = sources.includes("startupjobs");
+  const hasWorkingNomads = sources.includes("workingnomads");
   const limits = deriveExtractorLimits({
     budget: values.runBudget,
     searchTerms: values.searchTerms,
@@ -191,9 +226,21 @@ export function calculateAutomaticEstimate(args: {
   const hiringCafeCap = hasHiringCafe
     ? limits.jobspyResultsWanted * termCount
     : 0;
+  const startupJobsCap = hasStartupJobs
+    ? limits.startupjobsMaxJobsPerTerm * termCount
+    : 0;
+  const workingNomadsCap = hasWorkingNomads
+    ? limits.workingnomadsMaxJobsPerTerm * termCount
+    : 0;
 
   const discoveredCap =
-    jobspyCap + gradcrackerCap + ukvisaCap + adzunaCap + hiringCafeCap;
+    jobspyCap +
+    gradcrackerCap +
+    ukvisaCap +
+    adzunaCap +
+    hiringCafeCap +
+    startupJobsCap +
+    workingNomadsCap;
   const discoveredMin = Math.round(discoveredCap * 0.35);
   const discoveredMax = Math.round(discoveredCap * 0.75);
   const processedMin = Math.min(values.topN, discoveredMin);

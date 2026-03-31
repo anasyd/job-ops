@@ -24,16 +24,20 @@ export const useFilteredJobs = (
   sort: JobSort,
 ) =>
   useMemo(() => {
-    let filtered = jobs.filter((job) => job.status !== "in_progress");
+    let filtered = [...jobs];
 
     if (activeTab === "ready") {
-      filtered = filtered.filter((job) => job.status === "ready");
+      filtered = filtered.filter(
+        (job) => job.status === "ready" || job.status === "processing",
+      );
     } else if (activeTab === "discovered") {
       filtered = filtered.filter(
         (job) => job.status === "discovered" || job.status === "processing",
       );
     } else if (activeTab === "applied") {
       filtered = filtered.filter((job) => job.status === "applied");
+    } else if (activeTab === "all") {
+      filtered = filtered.filter((job) => job.closedAt == null);
     }
 
     if (activeTab !== "all") {

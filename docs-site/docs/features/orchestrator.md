@@ -73,7 +73,7 @@ Open the **search links** row in the Ready summary to reveal the generated links
 ### Opening documentation from the sidebar
 
 1. Open the sidebar menu.
-2. In the footer section under `Version <build>`, click **Documentation**, which opens the locally hosted docs in a new tab.
+2. In the footer section under `Version vX.Y.Z`, click **Documentation**, which opens the locally hosted docs in a new tab.
 
 ### Generating PDFs
 
@@ -82,6 +82,7 @@ PDF generation uses:
 - base resume selected from RxResume
 - job description
 - tailored summary/headline/skills/projects
+- the configured PDF renderer (`rxresume` export or local LaTeX via `tectonic`)
 
 Common paths:
 

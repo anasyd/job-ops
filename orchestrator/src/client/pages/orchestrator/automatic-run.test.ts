@@ -28,6 +28,7 @@ describe("automatic-run utilities", () => {
         runBudget: 100,
         country: "united kingdom",
         cityLocations: [],
+        workplaceTypes: ["remote", "hybrid", "onsite"],
       },
       sources: ["indeed", "linkedin", "gradcracker", "ukvisajobs"],
     });
@@ -52,6 +53,17 @@ describe("automatic-run utilities", () => {
     expect(cap).toBeLessThanOrEqual(750);
   });
 
+  it("assigns a dedicated startupjobs max-jobs limit", () => {
+    const limits = deriveExtractorLimits({
+      budget: 120,
+      searchTerms: ["backend", "platform"],
+      sources: ["startupjobs"],
+    });
+
+    expect(limits.startupjobsMaxJobsPerTerm).toBeGreaterThan(0);
+    expect(limits.startupjobsMaxJobsPerTerm).toBeLessThanOrEqual(120);
+  });
+
   it("returns zero estimate when no search terms are provided", () => {
     const estimate = calculateAutomaticEstimate({
       values: {
@@ -61,6 +73,7 @@ describe("automatic-run utilities", () => {
         runBudget: 750,
         country: "united kingdom",
         cityLocations: [],
+        workplaceTypes: ["remote", "hybrid", "onsite"],
       },
       sources: ["indeed", "linkedin", "gradcracker", "ukvisajobs"],
     });
@@ -88,6 +101,7 @@ describe("automatic-run utilities", () => {
         runBudget: 120,
         country: "united kingdom",
         cityLocations: [],
+        workplaceTypes: ["remote", "hybrid", "onsite"],
       },
       sources: ["adzuna"],
     });
@@ -105,8 +119,45 @@ describe("automatic-run utilities", () => {
         runBudget: 120,
         country: "united kingdom",
         cityLocations: [],
+        workplaceTypes: ["remote", "hybrid", "onsite"],
       },
       sources: ["hiringcafe"],
+    });
+
+    expect(estimate.discovered.cap).toBeGreaterThan(0);
+    expect(estimate.discovered.cap).toBeLessThanOrEqual(120);
+  });
+
+  it("includes startupjobs in estimate caps using the shared term budget", () => {
+    const estimate = calculateAutomaticEstimate({
+      values: {
+        topN: 10,
+        minSuitabilityScore: 50,
+        searchTerms: ["backend", "platform"],
+        runBudget: 120,
+        country: "united kingdom",
+        cityLocations: [],
+        workplaceTypes: ["remote", "hybrid", "onsite"],
+      },
+      sources: ["startupjobs"],
+    });
+
+    expect(estimate.discovered.cap).toBeGreaterThan(0);
+    expect(estimate.discovered.cap).toBeLessThanOrEqual(120);
+  });
+
+  it("includes workingnomads in estimate caps using the shared term budget", () => {
+    const estimate = calculateAutomaticEstimate({
+      values: {
+        topN: 10,
+        minSuitabilityScore: 50,
+        searchTerms: ["backend", "platform"],
+        runBudget: 120,
+        country: "united kingdom",
+        cityLocations: [],
+        workplaceTypes: ["remote", "hybrid", "onsite"],
+      },
+      sources: ["workingnomads"],
     });
 
     expect(estimate.discovered.cap).toBeGreaterThan(0);

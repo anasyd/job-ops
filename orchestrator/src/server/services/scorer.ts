@@ -3,17 +3,24 @@
  */
 
 import { logger } from "@infra/logger";
+import { getDefaultPromptTemplate } from "@shared/prompt-template-definitions.js";
 import type { Job } from "@shared/types";
-import { getSetting } from "../repositories/settings";
 import { LlmService } from "./llm/service";
 import type { JsonSchemaDefinition } from "./llm/types";
 import { stripMarkdownCodeFences } from "./llm/utils/json";
+import { resolveLlmModel } from "./modelSelection";
+import { renderPromptTemplate } from "./prompt-templates";
 import { getEffectiveSettings } from "./settings";
 
 interface SuitabilityResult {
   score: number; // 0-100
   reason: string; // Explanation
 }
+
+type ScoringPreferences = {
+  instructions: string;
+  promptTemplate: string;
+};
 
 /** JSON schema for suitability scoring response */
 const SCORING_SCHEMA: JsonSchemaDefinition = {
@@ -84,19 +91,17 @@ export async function scoreJobSuitability(
   job: Job,
   profile: Record<string, unknown>,
 ): Promise<SuitabilityResult> {
-  const [overrideModel, overrideModelScorer, settings] = await Promise.all([
-    getSetting("model"),
-    getSetting("modelScorer"),
+  const [model, settings] = await Promise.all([
+    resolveLlmModel("scoring"),
     getEffectiveSettings(),
   ]);
-  // Precedence: Scorer-specific override > Global override > Env var > Default
-  const model =
-    overrideModelScorer ||
-    overrideModel ||
-    process.env.MODEL ||
-    "google/gemini-3-flash-preview";
 
-  const prompt = buildScoringPrompt(job, sanitizeProfileForPrompt(profile));
+  const prompt = buildScoringPrompt(job, sanitizeProfileForPrompt(profile), {
+    instructions: settings.scoringInstructions?.value ?? "",
+    promptTemplate:
+      settings.scoringPromptTemplate?.value ??
+      getDefaultPromptTemplate("scoringPromptTemplate"),
+  });
 
   const llm = new LlmService();
   const result = await llm.callJson<{ score: number; reason: string }>({
@@ -252,37 +257,21 @@ export function parseJsonFromContent(
 function buildScoringPrompt(
   job: Job,
   profile: Record<string, unknown>,
+  preferences: ScoringPreferences,
 ): string {
-  return `You are evaluating a job listing for a candidate. Score how suitable this job is for the candidate on a scale of 0-100.
-
-SCORING CRITERIA:
-- Skills match (technologies, frameworks, languages): 0-30 points
-- Experience level match: 0-25 points
-- Location/remote work alignment: 0-15 points
-- Industry/domain fit: 0-15 points
-- Career growth potential: 0-15 points
-
-CANDIDATE PROFILE:
-${JSON.stringify(profile, null, 2)}
-
-JOB LISTING:
-Title: ${job.title}
-Employer: ${job.employer}
-Location: ${job.location || "Not specified"}
-Salary: ${job.salary || "Not specified"}
-Degree Required: ${job.degreeRequired || "Not specified"}
-Disciplines: ${job.disciplines || "Not specified"}
-
-JOB DESCRIPTION:
-${job.jobDescription || "No description available"}
-
-IMPORTANT: Respond with ONLY a valid JSON object. No markdown, no code fences, no explanation outside the JSON.
-
-REQUIRED FORMAT (exactly this structure):
-{"score": <integer 0-100>, "reason": "<1-2 sentence explanation>"}
-
-EXAMPLE VALID RESPONSE:
-{"score": 75, "reason": "Strong skills match with React and TypeScript requirements, but position requires 3+ years experience."}`;
+  return renderPromptTemplate(preferences.promptTemplate, {
+    profileJson: JSON.stringify(profile, null, 2),
+    jobTitle: job.title,
+    employer: job.employer,
+    location: job.location || "Not specified",
+    salary: job.salary || "Not specified",
+    degreeRequired: job.degreeRequired || "Not specified",
+    disciplines: job.disciplines || "Not specified",
+    jobDescription: job.jobDescription || "No description available",
+    scoringInstructionsText: preferences.instructions
+      ? preferences.instructions
+      : "No additional custom scoring instructions.",
+  });
 }
 
 function sanitizeProfileForPrompt(

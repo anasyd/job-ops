@@ -1,3 +1,4 @@
+import { useKeyboardAvailability } from "@client/hooks/useKeyboardAvailability";
 import { useSettings } from "@client/hooks/useSettings";
 import type React from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -6,7 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Drawer, DrawerClose, DrawerContent } from "@/components/ui/drawer";
 import { KeyboardShortcutBar } from "../components/KeyboardShortcutBar";
 import { KeyboardShortcutDialog } from "../components/KeyboardShortcutDialog";
-import type { FilterTab } from "./orchestrator/constants";
+import { useDemoInfo } from "../hooks/useDemoInfo";
+import { type FilterTab, tabs } from "./orchestrator/constants";
 import { FloatingJobActionsBar } from "./orchestrator/FloatingJobActionsBar";
 import { JobCommandBar } from "./orchestrator/JobCommandBar";
 import { JobDetailPanel } from "./orchestrator/JobDetailPanel";
@@ -85,18 +87,12 @@ export const OrchestratorPage: React.FC = () => {
   const [isFiltersOpen, setIsFiltersOpen] = useState(false);
   const [isHelpDialogOpen, setIsHelpDialogOpen] = useState(false);
   const [isDetailDrawerOpen, setIsDetailDrawerOpen] = useState(false);
+  const hasKeyboard = useKeyboardAvailability();
 
   const [isDesktop, setIsDesktop] = useState(() =>
     typeof window !== "undefined"
       ? window.matchMedia("(min-width: 1024px)").matches
       : false,
-  );
-
-  const setActiveTab = useCallback(
-    (newTab: FilterTab) => {
-      navigateWithContext(newTab, selectedJobId);
-    },
-    [navigateWithContext, selectedJobId],
   );
 
   const handleSelectJobId = useCallback(
@@ -107,6 +103,7 @@ export const OrchestratorPage: React.FC = () => {
   );
 
   const { settings } = useSettings();
+  const demoInfo = useDemoInfo();
   const {
     jobs,
     selectedJob,
@@ -152,6 +149,35 @@ export const OrchestratorPage: React.FC = () => {
     salaryFilter,
     sort,
   );
+  const setActiveTab = useCallback(
+    (newTab: FilterTab) => {
+      // Keep selected job if it belongs to the target tab, otherwise clear it.
+      // The auto-select effect will pick the first job on desktop when cleared.
+      const tabDef = tabs.find((t) => t.id === newTab);
+      const selectedItem = selectedJobId
+        ? jobs.find((j) => j.id === selectedJobId)
+        : null;
+      const jobFitsTab =
+        selectedItem &&
+        (tabDef?.statuses.length === 0 ||
+          tabDef?.statuses.includes(selectedItem.status));
+      navigateWithContext(newTab, jobFitsTab ? selectedJobId : null);
+    },
+    [navigateWithContext, selectedJobId, jobs],
+  );
+
+  // Synchronously null-out selectedJob when it doesn't belong to the current
+  // tab. The data hook resolves selectedJob from the full (unfiltered) job list
+  // via useEffect, so it lags by one render frame after a tab switch — without
+  // this guard the detail panel would briefly show the old job with the new
+  // tab's action buttons.
+  const visibleSelectedJob = useMemo(() => {
+    if (!selectedJob) return null;
+    const tabDef = tabs.find((t) => t.id === activeTab);
+    if (!tabDef || tabDef.statuses.length === 0) return selectedJob;
+    return tabDef.statuses.includes(selectedJob.status) ? selectedJob : null;
+  }, [selectedJob, activeTab]);
+
   const counts = useMemo(() => getJobCounts(jobs), [jobs]);
   const sourcesWithJobs = useMemo(() => getSourcesWithJobs(jobs), [jobs]);
   const {
@@ -220,7 +246,7 @@ export const OrchestratorPage: React.FC = () => {
     activeTab,
     activeJobs,
     selectedJobId,
-    selectedJob,
+    selectedJob: visibleSelectedJob,
     selectedJobIds,
     isDesktop,
     handleSelectJobId,
@@ -262,8 +288,8 @@ export const OrchestratorPage: React.FC = () => {
       if (selectedJobId) handleSelectJobId(null);
       return;
     }
-    if (!selectedJobId || !activeJobs.some((job) => job.id === selectedJobId)) {
-      // Auto-select first job ONLY on desktop
+    if (!selectedJobId) {
+      // Auto-select first job ONLY on desktop when nothing is currently selected.
       if (isDesktop) {
         navigateWithContext(activeTab, activeJobs[0].id, true);
       }
@@ -305,11 +331,13 @@ export const OrchestratorPage: React.FC = () => {
   }, [isDesktop, isDetailDrawerOpen]);
 
   useEffect(() => {
+    if (demoInfo?.demoMode) return;
+    if (!hasKeyboard) return;
     const hasSeen = localStorage.getItem("has-seen-keyboard-shortcuts");
     if (!hasSeen) {
       setIsHelpDialogOpen(true);
     }
-  }, []);
+  }, [demoInfo?.demoMode, hasKeyboard]);
 
   const onDrawerOpenChange = (open: boolean) => {
     setIsDetailDrawerOpen(open);
@@ -391,7 +419,7 @@ export const OrchestratorPage: React.FC = () => {
                 <JobDetailPanel
                   activeTab={activeTab}
                   activeJobs={activeJobs}
-                  selectedJob={selectedJob}
+                  selectedJob={visibleSelectedJob}
                   onSelectJobId={handleSelectJobId}
                   onJobUpdated={loadJobs}
                   onPauseRefreshChange={setIsRefreshPaused}
@@ -446,7 +474,7 @@ export const OrchestratorPage: React.FC = () => {
               <JobDetailPanel
                 activeTab={activeTab}
                 activeJobs={activeJobs}
-                selectedJob={selectedJob}
+                selectedJob={visibleSelectedJob}
                 onSelectJobId={handleSelectJobId}
                 onJobUpdated={loadJobs}
                 onPauseRefreshChange={setIsRefreshPaused}

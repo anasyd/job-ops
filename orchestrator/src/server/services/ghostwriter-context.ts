@@ -3,19 +3,24 @@ import { logger } from "@infra/logger";
 import { sanitizeUnknown } from "@infra/sanitize";
 import type { Job, ResumeProfile } from "@shared/types";
 import * as jobsRepo from "../repositories/jobs";
+import {
+  getWritingLanguageLabel,
+  resolveWritingOutputLanguage,
+} from "./output-language";
 import { getProfile } from "./profile";
-import { getEffectiveSettings } from "./settings";
-
-type JobChatStyle = {
-  tone: string;
-  formality: string;
-  constraints: string;
-  doNotUse: string;
-};
+import {
+  getEffectivePromptTemplate,
+  renderPromptTemplate,
+} from "./prompt-templates";
+import {
+  getWritingStyle,
+  stripLanguageDirectivesFromConstraints,
+  type WritingStyle,
+} from "./writing-style";
 
 export type JobChatPromptContext = {
   job: Job;
-  style: JobChatStyle;
+  style: WritingStyle;
   systemPrompt: string;
   jobSnapshot: string;
   profileSnapshot: string;
@@ -103,29 +108,33 @@ function buildProfileSnapshot(profile: ResumeProfile): string {
   ]);
 }
 
-function buildSystemPrompt(style: JobChatStyle): string {
-  return compactJoin([
-    "You are Ghostwriter, a job-application writing assistant for a single job.",
-    "Use only the provided job and profile context unless the user gives extra details.",
-    "Do not claim actions were executed. You are read-only and advisory.",
-    "If details are missing, say what is missing before making assumptions.",
-    "Avoid exposing private profile details that are unrelated to the user request.",
-    `Writing style tone: ${style.tone}.`,
-    `Writing style formality: ${style.formality}.`,
-    style.constraints ? `Writing constraints: ${style.constraints}` : null,
-    style.doNotUse ? `Avoid these terms: ${style.doNotUse}` : null,
-  ]);
-}
+async function buildSystemPrompt(
+  style: WritingStyle,
+  profile: ResumeProfile,
+): Promise<string> {
+  const resolvedLanguage = resolveWritingOutputLanguage({
+    style,
+    profile,
+  });
+  const outputLanguage = getWritingLanguageLabel(resolvedLanguage.language);
+  const effectiveConstraints = stripLanguageDirectivesFromConstraints(
+    style.constraints,
+  );
+  const template = await getEffectivePromptTemplate(
+    "ghostwriterSystemPromptTemplate",
+  );
 
-async function resolveStyle(): Promise<JobChatStyle> {
-  const settings = await getEffectiveSettings();
-
-  return {
-    tone: settings.chatStyleTone.value,
-    formality: settings.chatStyleFormality.value,
-    constraints: settings.chatStyleConstraints.value,
-    doNotUse: settings.chatStyleDoNotUse.value,
-  };
+  return renderPromptTemplate(template, {
+    outputLanguage,
+    tone: style.tone,
+    formality: style.formality,
+    constraintsSentence: effectiveConstraints
+      ? `Writing constraints: ${effectiveConstraints}`
+      : "",
+    avoidTermsSentence: style.doNotUse
+      ? `Avoid these terms: ${style.doNotUse}`
+      : "",
+  });
 }
 
 export async function buildJobChatPromptContext(
@@ -136,7 +145,7 @@ export async function buildJobChatPromptContext(
     throw notFound("Job not found");
   }
 
-  const style = await resolveStyle();
+  const style = await getWritingStyle();
 
   let profile: ResumeProfile = {};
   try {
@@ -148,9 +157,9 @@ export async function buildJobChatPromptContext(
     });
   }
 
-  const systemPrompt = buildSystemPrompt(style);
-  const jobSnapshot = buildJobSnapshot(job);
   const profileSnapshot = buildProfileSnapshot(profile);
+  const systemPrompt = await buildSystemPrompt(style, profile);
+  const jobSnapshot = buildJobSnapshot(job);
 
   if (!jobSnapshot.trim()) {
     throw badRequest("Unable to build job context");

@@ -265,6 +265,39 @@ describe("AutomaticRunTab", () => {
     );
   });
 
+  it("does not show legacy country-only city defaults as selected cities", () => {
+    render(
+      <AutomaticRunTab
+        open
+        settings={createAppSettings({
+          jobspyCountryIndeed: {
+            value: "united kingdom",
+            default: "united kingdom",
+            override: "united kingdom",
+          },
+          searchCities: {
+            value: "UK",
+            default: "UK",
+            override: "UK",
+          },
+        })}
+        enabledSources={["linkedin"]}
+        pipelineSources={["linkedin"]}
+        onToggleSource={vi.fn()}
+        onSetPipelineSources={vi.fn()}
+        isPipelineRunning={false}
+        onSaveAndRun={vi.fn().mockResolvedValue(undefined)}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Advanced settings" }));
+    fireEvent.focus(screen.getByLabelText("Cities"));
+
+    expect(
+      screen.queryByRole("button", { name: /Remove city/i }),
+    ).not.toBeInTheDocument();
+  });
+
   it("does not remove existing search terms when Backspace is pressed on an empty input", () => {
     render(
       <AutomaticRunTab
@@ -343,5 +376,118 @@ describe("AutomaticRunTab", () => {
       screen.getByRole("button", { name: "Remove city Manchester" }),
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Glassdoor" })).toBeEnabled();
+  });
+
+  it("loads saved workplace types from settings", () => {
+    render(
+      <AutomaticRunTab
+        open
+        settings={createAppSettings({
+          workplaceTypes: {
+            value: ["remote", "onsite"],
+            default: ["remote", "hybrid", "onsite"],
+            override: ["remote", "onsite"],
+          },
+        })}
+        enabledSources={["linkedin"]}
+        pipelineSources={["linkedin"]}
+        onToggleSource={vi.fn()}
+        onSetPipelineSources={vi.fn()}
+        isPipelineRunning={false}
+        onSaveAndRun={vi.fn().mockResolvedValue(undefined)}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Advanced settings" }));
+
+    expect(screen.getByLabelText("Remote")).toBeChecked();
+    expect(screen.getByLabelText("Onsite")).toBeChecked();
+    expect(screen.getByLabelText("Hybrid")).not.toBeChecked();
+  });
+
+  it("requires at least one workplace type", async () => {
+    render(
+      <AutomaticRunTab
+        open
+        settings={createAppSettings()}
+        enabledSources={["linkedin"]}
+        pipelineSources={["linkedin"]}
+        onToggleSource={vi.fn()}
+        onSetPipelineSources={vi.fn()}
+        isPipelineRunning={false}
+        onSaveAndRun={vi.fn().mockResolvedValue(undefined)}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Advanced settings" }));
+    fireEvent.click(screen.getByLabelText("Remote"));
+    fireEvent.click(screen.getByLabelText("Hybrid"));
+    fireEvent.click(screen.getByLabelText("Onsite"));
+
+    expect(
+      screen.getByText("Select at least one workplace type."),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Start run now" }),
+    ).toBeDisabled();
+  });
+
+  it("shows JobSpy guidance when non-remote workplace types are selected", () => {
+    render(
+      <AutomaticRunTab
+        open
+        settings={createAppSettings({
+          workplaceTypes: {
+            value: ["remote", "hybrid"],
+            default: ["remote", "hybrid", "onsite"],
+            override: ["remote", "hybrid"],
+          },
+        })}
+        enabledSources={["linkedin"]}
+        pipelineSources={["linkedin"]}
+        onToggleSource={vi.fn()}
+        onSetPipelineSources={vi.fn()}
+        isPipelineRunning={false}
+        onSaveAndRun={vi.fn().mockResolvedValue(undefined)}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Advanced settings" }));
+
+    expect(
+      screen.getByText(
+        /Indeed, LinkedIn, and Glassdoor only support strict remote filtering\./i,
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("submits workplace types in onSaveAndRun values", async () => {
+    const onSaveAndRun = vi.fn().mockResolvedValue(undefined);
+
+    render(
+      <AutomaticRunTab
+        open
+        settings={createAppSettings()}
+        enabledSources={["linkedin"]}
+        pipelineSources={["linkedin"]}
+        onToggleSource={vi.fn()}
+        onSetPipelineSources={vi.fn()}
+        isPipelineRunning={false}
+        onSaveAndRun={onSaveAndRun}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Advanced settings" }));
+    fireEvent.click(screen.getByLabelText("Hybrid"));
+    fireEvent.click(screen.getByLabelText("Onsite"));
+    fireEvent.click(screen.getByRole("button", { name: "Start run now" }));
+
+    await waitFor(() => {
+      expect(onSaveAndRun).toHaveBeenCalledWith(
+        expect.objectContaining({
+          workplaceTypes: ["remote"],
+        }),
+      );
+    });
   });
 });

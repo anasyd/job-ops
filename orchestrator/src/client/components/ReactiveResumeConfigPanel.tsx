@@ -5,10 +5,24 @@ import {
   toggleMustInclude,
 } from "@client/pages/settings/resume-projects-state";
 import type { ResumeProjectsSettingsInput } from "@shared/settings-schema.js";
-import type { ResumeProjectCatalogItem, RxResumeMode } from "@shared/types.js";
+import {
+  PDF_RENDERER_LABELS,
+  type PdfRenderer,
+  type ResumeProjectCatalogItem,
+  type RxResumeMode,
+} from "@shared/types.js";
+import { AlertCircle, AlertTriangle } from "lucide-react";
 import type React from "react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import {
   Table,
@@ -26,6 +40,7 @@ type VersionValidationState = {
   checked: boolean;
   valid: boolean;
   message?: string | null;
+  status?: number | null;
 };
 
 type ProjectSelectionConfig = {
@@ -44,6 +59,9 @@ type ProjectSelectionConfig = {
 type ReactiveResumeConfigPanelProps = {
   mode: RxResumeMode;
   onModeChange: (mode: RxResumeMode) => void;
+  pdfRenderer: PdfRenderer;
+  onPdfRendererChange: (renderer: PdfRenderer) => void;
+  pdfRendererError?: string;
   disabled?: boolean;
   hasRxResumeAccess?: boolean;
   showValidationStatus?: boolean;
@@ -61,6 +79,13 @@ type ReactiveResumeConfigPanelProps = {
     error?: string;
     helper?: string;
     placeholder?: string;
+  };
+  shared: {
+    baseUrl: string;
+    onBaseUrlChange: (value: string) => void;
+    baseUrlError?: string;
+    baseUrlHelper?: string;
+    baseUrlPlaceholder?: string;
   };
   v4: {
     email: string;
@@ -100,16 +125,25 @@ function renderStatusPill(label: string, state: VersionValidationState) {
   );
 }
 
+function isAvailabilityWarning(state?: VersionValidationState): boolean {
+  const status = state?.status ?? null;
+  return status === 0 || (typeof status === "number" && status >= 500);
+}
+
 export const ReactiveResumeConfigPanel: React.FC<
   ReactiveResumeConfigPanelProps
 > = ({
   mode,
   onModeChange,
+  pdfRenderer,
+  onPdfRendererChange,
+  pdfRendererError,
   disabled = false,
   hasRxResumeAccess = false,
   showValidationStatus = false,
   validationStatuses,
   intro,
+  shared,
   v5,
   v4,
   projectSelection,
@@ -118,8 +152,17 @@ export const ReactiveResumeConfigPanel: React.FC<
     projectSelection && hasRxResumeAccess,
   );
   const selectedValidationStatus = validationStatuses?.[mode];
+  const showInlineValidationAlert = Boolean(
+    selectedValidationStatus?.checked &&
+      !selectedValidationStatus.valid &&
+      selectedValidationStatus.message,
+  );
+  const selectedValidationIsWarning =
+    showInlineValidationAlert &&
+    isAvailabilityWarning(selectedValidationStatus);
   const handleModeChange = (value: string) =>
     onModeChange(value === "v4" ? "v4" : "v5");
+  const latexSelected = pdfRenderer === "latex";
 
   return (
     <div className="space-y-4">
@@ -131,6 +174,37 @@ export const ReactiveResumeConfigPanel: React.FC<
           ) : null}
         </div>
       ) : null}
+
+      <div className="space-y-2">
+        <label htmlFor="pdfRenderer" className="text-sm font-medium">
+          PDF renderer
+        </label>
+        <Select
+          value={pdfRenderer}
+          onValueChange={(value) =>
+            onPdfRendererChange(value === "latex" ? "latex" : "rxresume")
+          }
+          disabled={disabled}
+        >
+          <SelectTrigger id="pdfRenderer">
+            <SelectValue placeholder="Choose PDF renderer" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="rxresume">
+              {PDF_RENDERER_LABELS.rxresume}
+            </SelectItem>
+            <SelectItem value="latex">{PDF_RENDERER_LABELS.latex}</SelectItem>
+          </SelectContent>
+        </Select>
+        {pdfRendererError ? (
+          <p className="text-xs text-destructive">{pdfRendererError}</p>
+        ) : null}
+        <p className="text-xs text-muted-foreground">
+          {latexSelected
+            ? "LaTeX renders PDFs locally with Jake's template and requires tectonic on the JobOps host."
+            : "RxResume export uses the upstream print/export endpoint for the final PDF."}
+        </p>
+      </div>
 
       <Tabs value={mode} onValueChange={handleModeChange}>
         <TabsList className="grid h-auto w-full grid-cols-2">
@@ -149,8 +223,46 @@ export const ReactiveResumeConfigPanel: React.FC<
         </div>
       ) : null}
 
+      {showInlineValidationAlert && selectedValidationStatus?.message ? (
+        <Alert
+          variant={selectedValidationIsWarning ? "warning" : "destructive"}
+        >
+          {selectedValidationIsWarning ? (
+            <AlertTriangle className="h-4 w-4" />
+          ) : (
+            <AlertCircle className="h-4 w-4" />
+          )}
+          <AlertTitle>
+            Reactive Resume {mode.toUpperCase()}{" "}
+            {selectedValidationIsWarning ? "warning" : "error"}
+          </AlertTitle>
+          <AlertDescription>
+            {selectedValidationStatus.message}
+          </AlertDescription>
+        </Alert>
+      ) : null}
+
       {mode === "v5" ? (
         <div className="grid gap-4">
+          <SettingsInput
+            label="RxResume URL"
+            inputProps={{
+              name: "rxresumeUrl",
+              value: shared.baseUrl,
+              onChange: (event) =>
+                shared.onBaseUrlChange(event.currentTarget.value),
+            }}
+            type="url"
+            placeholder={
+              shared.baseUrlPlaceholder ?? "https://resume.example.com"
+            }
+            helper={
+              shared.baseUrlHelper ??
+              "Leave blank to use the default for the selected mode (or the RXRESUME_URL environment override, if set)."
+            }
+            disabled={disabled}
+            error={shared.baseUrlError}
+          />
           <SettingsInput
             label="v5 API key"
             inputProps={{
@@ -167,6 +279,27 @@ export const ReactiveResumeConfigPanel: React.FC<
         </div>
       ) : (
         <div className="grid gap-4 md:grid-cols-2">
+          <div className="md:col-span-2">
+            <SettingsInput
+              label="RxResume URL"
+              inputProps={{
+                name: "rxresumeUrl",
+                value: shared.baseUrl,
+                onChange: (event) =>
+                  shared.onBaseUrlChange(event.currentTarget.value),
+              }}
+              type="url"
+              placeholder={
+                shared.baseUrlPlaceholder ?? "https://resume.example.com"
+              }
+              helper={
+                shared.baseUrlHelper ??
+                "Leave blank to use the public cloud default for the selected mode."
+              }
+              disabled={disabled}
+              error={shared.baseUrlError}
+            />
+          </div>
           <SettingsInput
             label="v4 Email"
             inputProps={{

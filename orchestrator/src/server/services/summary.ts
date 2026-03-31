@@ -4,9 +4,23 @@
 
 import { logger } from "@infra/logger";
 import type { ResumeProfile } from "@shared/types";
-import { getSetting } from "../repositories/settings";
 import { LlmService } from "./llm/service";
 import type { JsonSchemaDefinition } from "./llm/types";
+import { resolveLlmModel } from "./modelSelection";
+import {
+  getWritingLanguageLabel,
+  resolveWritingOutputLanguage,
+} from "./output-language";
+import {
+  getEffectivePromptTemplate,
+  renderPromptTemplate,
+} from "./prompt-templates";
+import {
+  getWritingStyle,
+  stripKeywordLimitFromConstraints,
+  stripLanguageDirectivesFromConstraints,
+  stripWordLimitFromConstraints,
+} from "./writing-style";
 
 export interface TailoredData {
   summary: string;
@@ -67,17 +81,15 @@ export async function generateTailoring(
   jobDescription: string,
   profile: ResumeProfile,
 ): Promise<TailoringResult> {
-  const [overrideModel, overrideModelTailoring] = await Promise.all([
-    getSetting("model"),
-    getSetting("modelTailoring"),
+  const [model, writingStyle] = await Promise.all([
+    resolveLlmModel("tailoring"),
+    getWritingStyle(),
   ]);
-  // Precedence: Tailoring-specific override > Global override > Env var > Default
-  const model =
-    overrideModelTailoring ||
-    overrideModel ||
-    process.env.MODEL ||
-    "google/gemini-3-flash-preview";
-  const prompt = buildTailoringPrompt(profile, jobDescription);
+  const prompt = await buildTailoringPrompt(
+    profile,
+    jobDescription,
+    writingStyle,
+  );
 
   const llm = new LlmService();
   const result = await llm.callJson<TailoredData>({
@@ -132,7 +144,27 @@ export async function generateSummary(
   };
 }
 
-function buildTailoringPrompt(profile: ResumeProfile, jd: string): string {
+async function buildTailoringPrompt(
+  profile: ResumeProfile,
+  jd: string,
+  writingStyle: Awaited<ReturnType<typeof getWritingStyle>>,
+): Promise<string> {
+  const resolvedLanguage = resolveWritingOutputLanguage({
+    style: writingStyle,
+    profile,
+  });
+  const outputLanguage = getWritingLanguageLabel(resolvedLanguage.language);
+  let effectiveConstraints = stripLanguageDirectivesFromConstraints(
+    writingStyle.constraints,
+  );
+  if (writingStyle.summaryMaxWords != null) {
+    effectiveConstraints = stripWordLimitFromConstraints(effectiveConstraints);
+  }
+  if (writingStyle.maxKeywordsPerSkill != null) {
+    effectiveConstraints =
+      stripKeywordLimitFromConstraints(effectiveConstraints);
+  }
+
   // Extract only needed parts of profile to save tokens
   const relevantProfile = {
     basics: {
@@ -153,42 +185,29 @@ function buildTailoringPrompt(profile: ResumeProfile, jd: string): string {
     })),
   };
 
-  return `
-You are an expert resume writer tailoring a profile for a specific job application.
-You must return a JSON object with three fields: "headline", "summary", and "skills".
+  const template = await getEffectivePromptTemplate("tailoringPromptTemplate");
 
-JOB DESCRIPTION (JD):
-${jd}
-
-MY PROFILE:
-${JSON.stringify(relevantProfile, null, 2)}
-
-INSTRUCTIONS:
-
-1. "headline" (String):
-   - CRITICAL: This is the #1 ATS factor.
-   - It must match the Job Title from the JD exactly (e.g., if JD says "Senior React Dev", use "Senior React Dev").
-   - If the JD title is very generic, you may add one specialty, but keep it matching the role.
-
-2. "summary" (String):
-   - The Hook. This needs to mirror the company's "About You" / "What we're looking for" section.
-   - Keep it concise, warm, and confident.
-   - Do NOT invent experience.
-   - Use the profile to add context.
-
-3. "skills" (Array of Objects):
-   - Review my existing skills section structure.
-   - Keyword Stuffing: Swap synonyms to match the JD exactly (e.g. "TDD" -> "Unit Testing", "ReactJS" -> "React").
-   - Keep my original skill levels and categories, just rename/reorder keywords to prioritize JD terms.
-   - Return the full "items" array for the skills section, preserving the structure: { "name": "Frontend", "keywords": [...] }.
-
-OUTPUT FORMAT (JSON):
-{
-  "headline": "...",
-  "summary": "...",
-  "skills": [ ... ]
-}
-`;
+  return renderPromptTemplate(template, {
+    jobDescription: jd,
+    profileJson: JSON.stringify(relevantProfile, null, 2),
+    outputLanguage,
+    tone: writingStyle.tone,
+    formality: writingStyle.formality,
+    summaryMaxWordsLine:
+      writingStyle.summaryMaxWords != null
+        ? ` Maximum ${writingStyle.summaryMaxWords} ${writingStyle.summaryMaxWords === 1 ? "word" : "words"}.`
+        : "",
+    maxKeywordsPerSkillLine:
+      writingStyle.maxKeywordsPerSkill != null
+        ? `\n   - Maximum ${writingStyle.maxKeywordsPerSkill} ${writingStyle.maxKeywordsPerSkill === 1 ? "keyword" : "keywords"} per category. If a category has more, keep only the most JD-relevant ones.`
+        : "",
+    constraintsBullet: effectiveConstraints
+      ? `- Additional constraints: ${effectiveConstraints}`
+      : "",
+    avoidTermsBullet: writingStyle.doNotUse
+      ? `- Avoid these words or phrases: ${writingStyle.doNotUse}`
+      : "",
+  });
 }
 
 function sanitizeText(text: string): string {

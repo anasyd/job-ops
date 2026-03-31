@@ -7,9 +7,9 @@ sidebar_position: 4
 
 ## What it is
 
-Reactive Resume integration powers JobOps PDF generation.
+Reactive Resume provides the structured base resume that JobOps uses for PDF generation.
 
-JobOps uses a selected RxResume base resume as the source of truth, then applies job-specific tailoring (summary, headline, skills, project visibility) before exporting a PDF.
+JobOps uses a selected RxResume base resume as the source of truth, applies job-specific tailoring (summary, headline, skills, project visibility), then renders the final PDF using the renderer selected in Settings.
 
 ## Why it exists
 
@@ -19,20 +19,19 @@ Most users need a repeatable resume pipeline:
 - controlled project inclusion rules
 - per-job tailored output without manual copy/paste
 
-Reactive Resume integration provides that workflow end-to-end.
+Reactive Resume integration provides the editable, structured resume source that makes that workflow reliable.
 
 ### Why JobOps uses RxResume (instead of building a new editor)
 
-RxResume is a mature, established resume product with strong PDF output quality.
+RxResume is a mature, established resume product with a strong editing experience and a JSON-native data model.
 
 Key reasons:
 
-- ATS-friendly PDF generation is already excellent and battle-tested.
 - The editor UX is strong and supports extensive user customization.
 - It supports many themes out of the box.
 - It has a JSON-native model (import/export), which is critical for JobOps automation.
 
-Because RxResume uses structured JSON, JobOps can safely apply LLM-driven updates to specific sections before generating PDFs.
+Because RxResume uses structured JSON, JobOps can safely apply LLM-driven updates to specific sections before rendering PDFs locally.
 
 ## Core concepts
 
@@ -94,6 +93,7 @@ Important:
 Configure in **Settings → Reactive Resume**:
 
 - `rxresumeMode` (`v5` or `v4`)
+- `rxresumeUrl` (optional shared URL for cloud or self-hosted deployments)
 - `rxresumeApiKey` (for v5)
 - `rxresumeEmail` + `rxresumePassword` (for v4)
 
@@ -104,6 +104,16 @@ Or via environment variables:
 - `RXRESUME_EMAIL`
 - `RXRESUME_PASSWORD`
 - optional `RXRESUME_URL` (works for both modes; v5 OpenAPI path is added automatically)
+
+If you leave the URL blank in the dashboard, JobOps uses `RXRESUME_URL` when it is set; if not set, it falls back to the public cloud default for the selected mode.
+
+### Save-time validation
+
+When you save Reactive Resume credentials or the shared URL in Settings:
+
+1. JobOps validates only the credential-bearing Reactive Resume fields for the selected mode.
+2. Invalid credentials or other `4xx` configuration failures block the save and show a persistent inline error.
+3. Temporary network failures, timeouts, or upstream `5xx` errors show a persistent inline warning, but the save still succeeds.
 
 ### 2) Select base resume
 
@@ -132,9 +142,16 @@ High-level flow:
 2. Apply tailored summary/headline/skills.
 3. Compute final visible projects from your selection rules.
 4. Optionally rewrite outbound links to tracer links (per-job toggle).
-5. Create temporary resume in RxResume.
-6. Export PDF.
-7. Delete temporary resume.
+5. Normalize the tailored resume data into JobOps' renderer document model.
+6. Render the PDF with the configured renderer:
+   - RxResume export
+   - Local LaTeX with `tectonic`
+
+### Resume-data caching
+
+JobOps caches successful Reactive Resume resume fetches in memory for 5 minutes.
+
+This reduces repeated API calls from settings loads, profile checks, project lookups, and PDF generation while still refreshing often enough for normal editing workflows.
 
 ### Per-job tracer links
 
@@ -161,6 +178,19 @@ Current AI-driven edits are intentionally scoped:
 - `headline/title`
 - `skills` and keywords
 - project **visibility** (enable/disable per project)
+
+### Local renderer dependency
+
+JobOps can generate the final PDF in 2 ways:
+
+- `rxresume`: use the upstream RxResume print/export endpoint
+- `latex`: render locally with the Jake Gutierrez-based LaTeX template
+
+Notes:
+
+- RxResume still supplies the structured base resume and project data in both modes.
+- In Docker deployments, `tectonic` is bundled into the image for the LaTeX option.
+- In non-Docker local environments, install `tectonic` and optionally set `TECTONIC_BIN` if needed when using the LaTeX option.
 
 ## API reference
 
@@ -205,6 +235,8 @@ curl -X POST "http://localhost:3001/api/jobs/<jobId>/generate-pdf"
 - Ensure the selected mode has credentials configured.
 - `v5`: set a valid API key.
 - `v4`: set email + password.
+- Invalid credentials block save and remain visible as an inline error until you edit the selected mode's credentials or URL.
+- Temporary Reactive Resume downtime shows an inline warning, but other settings can still be saved.
 - Save settings, then refresh resumes in the Reactive Resume section.
 
 ### No resumes appear in dropdown
@@ -230,6 +262,12 @@ curl -X POST "http://localhost:3001/api/jobs/<jobId>/generate-pdf"
 
 - Settings changes apply to new generation runs.
 - Regenerate PDFs for already-ready jobs.
+
+### PDF generation fails because the renderer is unavailable
+
+- Ensure `tectonic` is installed on the machine running JobOps.
+- If the binary is installed outside your normal shell `PATH`, set `TECTONIC_BIN` to the executable path.
+- Re-run PDF generation after fixing the local renderer dependency.
 
 ## Best practices
 

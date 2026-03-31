@@ -31,6 +31,7 @@ vi.mock("./client", () => ({
 import { getSetting } from "@server/repositories/settings";
 import { RxResumeClient } from "./client";
 import {
+  clearRxResumeResumeCache,
   extractProjectsFromResume,
   getResume as getResumeFromAdapter,
   listResumes,
@@ -53,9 +54,12 @@ function mockSettings(map: SettingMap): void {
 describe("rxresume adapter", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.useRealTimers();
+    clearRxResumeResumeCache();
     delete process.env.RXRESUME_API_KEY;
     delete process.env.RXRESUME_EMAIL;
     delete process.env.RXRESUME_PASSWORD;
+    delete process.env.RXRESUME_URL;
     delete process.env.RXRESUME_MODE;
     mockSettings({});
   });
@@ -157,6 +161,44 @@ describe("rxresume adapter", () => {
     expect(result).toEqual({ ok: true, mode: "v4" });
   });
 
+  it("prefers stored rxresumeUrl over environment values", async () => {
+    process.env.RXRESUME_URL = "https://env.rxresume.example.com";
+    mockSettings({
+      rxresumeMode: "v4",
+      rxresumeEmail: "user@example.com",
+      rxresumePassword: "pw",
+      rxresumeUrl: "https://stored.rxresume.example.com",
+    });
+    vi.mocked(RxResumeClient.verifyCredentials).mockResolvedValue({ ok: true });
+
+    await validateCredentials();
+
+    expect(RxResumeClient.verifyCredentials).toHaveBeenCalledWith(
+      "user@example.com",
+      "pw",
+      "https://stored.rxresume.example.com",
+    );
+  });
+
+  it("falls back to the default v4 URL when no env or stored URL is configured", async () => {
+    mockSettings({
+      rxresumeMode: "v4",
+      rxresumeEmail: "user@example.com",
+      rxresumePassword: "pw",
+    });
+    vi.mocked(RxResumeClient.verifyCredentials).mockResolvedValue({ ok: true });
+
+    await validateCredentials({
+      v4: { baseUrl: "   " },
+    });
+
+    expect(RxResumeClient.verifyCredentials).toHaveBeenCalledWith(
+      "user@example.com",
+      "pw",
+      "https://v4.rxresu.me",
+    );
+  });
+
   it("does not fall back to v4 validation when explicit v5 validation fails", async () => {
     mockSettings({
       rxresumeMode: "v5",
@@ -181,6 +223,109 @@ describe("rxresume adapter", () => {
       status: 401,
       message: "Reactive Resume API error (401): Unauthorized",
     });
+  });
+
+  it("caches successful resume fetches", async () => {
+    mockSettings({ rxresumeMode: "v5", rxresumeApiKey: "v5-key" });
+    vi.mocked(v5.getResume).mockResolvedValue({
+      id: "resume-1",
+      name: "Resume One",
+      data: { basics: { name: "Test User" } },
+    } as any);
+
+    const first = await getResumeFromAdapter("resume-1");
+    const second = await getResumeFromAdapter("resume-1");
+
+    expect(v5.getResume).toHaveBeenCalledTimes(1);
+    expect(first).toEqual(second);
+    expect(first).not.toBe(second);
+  });
+
+  it("expires cached resumes after the ttl", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
+    mockSettings({ rxresumeMode: "v5", rxresumeApiKey: "v5-key" });
+    vi.mocked(v5.getResume).mockResolvedValue({
+      id: "resume-1",
+      name: "Resume One",
+      data: { basics: { name: "Test User" } },
+    } as any);
+
+    await getResumeFromAdapter("resume-1");
+    vi.advanceTimersByTime(5 * 60 * 1000 + 1);
+    await getResumeFromAdapter("resume-1");
+
+    expect(v5.getResume).toHaveBeenCalledTimes(2);
+  });
+
+  it("supports forceRefresh for cached resumes", async () => {
+    mockSettings({ rxresumeMode: "v5", rxresumeApiKey: "v5-key" });
+    vi.mocked(v5.getResume).mockResolvedValue({
+      id: "resume-1",
+      name: "Resume One",
+      data: { basics: { name: "Test User" } },
+    } as any);
+
+    await getResumeFromAdapter("resume-1");
+    await getResumeFromAdapter("resume-1", { forceRefresh: true });
+
+    expect(v5.getResume).toHaveBeenCalledTimes(2);
+  });
+
+  it("clears the centralized resume cache on demand", async () => {
+    mockSettings({ rxresumeMode: "v5", rxresumeApiKey: "v5-key" });
+    vi.mocked(v5.getResume).mockResolvedValue({
+      id: "resume-1",
+      name: "Resume One",
+      data: { basics: { name: "Test User" } },
+    } as any);
+
+    await getResumeFromAdapter("resume-1");
+    clearRxResumeResumeCache();
+    await getResumeFromAdapter("resume-1");
+
+    expect(v5.getResume).toHaveBeenCalledTimes(2);
+  });
+
+  it("coalesces in-flight resume fetches", async () => {
+    mockSettings({ rxresumeMode: "v5", rxresumeApiKey: "v5-key" });
+    let resolveResume: ((value: Record<string, unknown>) => void) | undefined;
+    vi.mocked(v5.getResume).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveResume = resolve;
+        }) as Promise<any>,
+    );
+
+    const first = getResumeFromAdapter("resume-1");
+    const second = getResumeFromAdapter("resume-1");
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(v5.getResume).toHaveBeenCalledTimes(1);
+    resolveResume?.({
+      id: "resume-1",
+      name: "Resume One",
+      data: { basics: { name: "Test User" } },
+    });
+
+    const [firstResult, secondResult] = await Promise.all([first, second]);
+    expect(firstResult).toEqual(secondResult);
+  });
+
+  it("creates separate cache entries for different credential fingerprints", async () => {
+    vi.mocked(v5.getResume).mockResolvedValue({
+      id: "resume-1",
+      name: "Resume One",
+      data: { basics: { name: "Test User" } },
+    } as any);
+
+    mockSettings({ rxresumeMode: "v5", rxresumeApiKey: "v5-key-one" });
+    await getResumeFromAdapter("resume-1");
+
+    mockSettings({ rxresumeMode: "v5", rxresumeApiKey: "v5-key-two" });
+    await getResumeFromAdapter("resume-1");
+
+    expect(v5.getResume).toHaveBeenCalledTimes(2);
   });
 
   it("prepares tailored v5 resume payload without relying on v4 fields", async () => {

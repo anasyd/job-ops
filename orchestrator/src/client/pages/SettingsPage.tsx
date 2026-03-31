@@ -6,8 +6,12 @@ import { useTracerReadiness } from "@client/hooks/useTracerReadiness";
 import {
   coerceRxResumeMode,
   getRxResumeCredentialDrafts,
+  getRxResumeCredentialPrecheckFailure,
+  isRxResumeAvailabilityValidationFailure,
+  isRxResumeBlockingValidationFailure,
   RXRESUME_MODES,
   RXRESUME_PRECHECK_MESSAGES,
+  toRxResumeValidationPayload,
   validateAndMaybePersistRxResumeMode,
 } from "@client/lib/rxresume-config";
 import { BackupSettingsSection } from "@client/pages/settings/components/BackupSettingsSection";
@@ -16,6 +20,7 @@ import { DangerZoneSection } from "@client/pages/settings/components/DangerZoneS
 import { DisplaySettingsSection } from "@client/pages/settings/components/DisplaySettingsSection";
 import { EnvironmentSettingsSection } from "@client/pages/settings/components/EnvironmentSettingsSection";
 import { ModelSettingsSection } from "@client/pages/settings/components/ModelSettingsSection";
+import { PromptTemplatesSection } from "@client/pages/settings/components/PromptTemplatesSection";
 import { ReactiveResumeSection } from "@client/pages/settings/components/ReactiveResumeSection";
 import { ScoringSettingsSection } from "@client/pages/settings/components/ScoringSettingsSection";
 import { TracerLinksSettingsSection } from "@client/pages/settings/components/TracerLinksSettingsSection";
@@ -37,11 +42,12 @@ import type {
   ResumeProjectCatalogItem,
   ResumeProjectsSettings,
   RxResumeMode,
+  ValidationResult,
 } from "@shared/types.js";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Settings } from "lucide-react";
+import { Search, Settings } from "lucide-react";
 import type React from "react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   FormProvider,
   type Resolver,
@@ -51,8 +57,15 @@ import {
 import { toast } from "sonner";
 import { useQueryErrorToast } from "@/client/hooks/useQueryErrorToast";
 import { queryKeys } from "@/client/lib/queryKeys";
-import { Accordion } from "@/components/ui/accordion";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 const DEFAULT_FORM_VALUES: UpdateSettingsInput = {
   model: "",
@@ -65,14 +78,21 @@ const DEFAULT_FORM_VALUES: UpdateSettingsInput = {
   pipelineWebhookUrl: "",
   jobCompleteWebhookUrl: "",
   resumeProjects: null,
+  pdfRenderer: "rxresume",
   rxresumeMode: "v5",
   rxresumeBaseResumeId: null,
   showSponsorInfo: null,
+  renderMarkdownInJobDescriptions: null,
   chatStyleTone: "",
   chatStyleFormality: "",
   chatStyleConstraints: "",
   chatStyleDoNotUse: "",
+  chatStyleSummaryMaxWords: null,
+  chatStyleMaxKeywordsPerSkill: null,
+  chatStyleLanguageMode: null,
+  chatStyleManualLanguage: null,
   rxresumeEmail: "",
+  rxresumeUrl: "",
   rxresumePassword: "",
   rxresumeApiKey: "",
   basicAuthUser: "",
@@ -90,6 +110,10 @@ const DEFAULT_FORM_VALUES: UpdateSettingsInput = {
   missingSalaryPenalty: null,
   autoSkipScoreThreshold: null,
   blockedCompanyKeywords: [],
+  scoringInstructions: "",
+  ghostwriterSystemPromptTemplate: "",
+  tailoringPromptTemplate: "",
+  scoringPromptTemplate: "",
 };
 
 type LlmProviderValue = LlmProviderId | null;
@@ -97,12 +121,249 @@ type RxResumeValidationBadgeState = {
   checked: boolean;
   valid: boolean;
   message: string | null;
+  status: number | null;
 };
 const EMPTY_RXRESUME_VALIDATION_BADGE_STATE: RxResumeValidationBadgeState = {
   checked: false,
   valid: false,
   message: null,
+  status: null,
 };
+
+type SettingsSectionId =
+  | "model"
+  | "chat"
+  | "prompt-templates"
+  | "scoring"
+  | "reactive-resume"
+  | "webhooks"
+  | "tracer-links"
+  | "environment"
+  | "display"
+  | "backup"
+  | "danger-zone";
+
+type SettingsGroupId =
+  | "ai"
+  | "scoring"
+  | "integrations"
+  | "accounts"
+  | "display"
+  | "backups"
+  | "danger";
+
+type SettingsSectionDescriptor = {
+  id: SettingsSectionId;
+  label: string;
+  description: string;
+  searchTerms: string[];
+};
+
+type SettingsNavGroup = {
+  id: SettingsGroupId;
+  items: SettingsSectionDescriptor[];
+  label: string;
+};
+
+const SETTINGS_NAV_GROUPS: SettingsNavGroup[] = [
+  {
+    id: "ai",
+    label: "AI",
+    items: [
+      {
+        id: "model",
+        label: "Models",
+        description: "Provider, API credentials, and task-specific overrides.",
+        searchTerms: ["llm", "provider", "openai", "gemini", "ollama"],
+      },
+      {
+        id: "chat",
+        label: "Writing Style",
+        description: "Tone, language, presets, and writing constraints.",
+        searchTerms: ["ghostwriter", "language", "tone", "formality"],
+      },
+      {
+        id: "prompt-templates",
+        label: "Prompt Templates",
+        description:
+          "Base AI instructions for Ghostwriter, tailoring, and scoring.",
+        searchTerms: ["prompt", "templates", "system prompt", "instructions"],
+      },
+    ],
+  },
+  {
+    id: "scoring",
+    label: "Scoring",
+    items: [
+      {
+        id: "scoring",
+        label: "Rules & Filters",
+        description:
+          "Salary penalties, thresholds, keywords, and scorer hints.",
+        searchTerms: ["threshold", "salary", "keywords", "instructions"],
+      },
+    ],
+  },
+  {
+    id: "integrations",
+    label: "Integrations",
+    items: [
+      {
+        id: "reactive-resume",
+        label: "Reactive Resume",
+        description: "Resume sync, templates, and project selection.",
+        searchTerms: ["rxresume", "resume", "projects", "template"],
+      },
+      {
+        id: "webhooks",
+        label: "Webhooks",
+        description: "Pipeline and job completion event destinations.",
+        searchTerms: ["hooks", "notifications", "pipeline", "applied"],
+      },
+      {
+        id: "tracer-links",
+        label: "Tracer Links",
+        description: "Public URL readiness and verification state.",
+        searchTerms: ["public url", "verify", "readiness", "health"],
+      },
+    ],
+  },
+  {
+    id: "accounts",
+    label: "Accounts & Security",
+    items: [
+      {
+        id: "environment",
+        label: "Accounts & Access",
+        description: "Service credentials and basic auth protection.",
+        searchTerms: ["security", "auth", "adzuna", "ukvisajobs"],
+      },
+    ],
+  },
+  {
+    id: "display",
+    label: "Display",
+    items: [
+      {
+        id: "display",
+        label: "Display Preferences",
+        description: "Sponsor badges and markdown rendering behavior.",
+        searchTerms: ["markdown", "sponsor", "rendering", "appearance"],
+      },
+    ],
+  },
+  {
+    id: "backups",
+    label: "Backups",
+    items: [
+      {
+        id: "backup",
+        label: "Backups",
+        description: "Automatic schedules, retention, and manual snapshots.",
+        searchTerms: ["recovery", "database", "restore", "schedule"],
+      },
+    ],
+  },
+  {
+    id: "danger",
+    label: "Danger Zone",
+    items: [
+      {
+        id: "danger-zone",
+        label: "Danger Zone",
+        description: "Delete jobs, runs, or the full local database.",
+        searchTerms: ["delete", "clear", "cleanup", "destructive"],
+      },
+    ],
+  },
+];
+
+const SECTION_FIELD_MAP: Record<
+  SettingsSectionId,
+  Array<keyof UpdateSettingsInput>
+> = {
+  model: [
+    "llmProvider",
+    "llmBaseUrl",
+    "llmApiKey",
+    "model",
+    "modelScorer",
+    "modelTailoring",
+    "modelProjectSelection",
+  ],
+  chat: [
+    "chatStyleTone",
+    "chatStyleFormality",
+    "chatStyleConstraints",
+    "chatStyleDoNotUse",
+    "chatStyleLanguageMode",
+    "chatStyleManualLanguage",
+  ],
+  "prompt-templates": [
+    "ghostwriterSystemPromptTemplate",
+    "tailoringPromptTemplate",
+    "scoringPromptTemplate",
+  ],
+  scoring: [
+    "penalizeMissingSalary",
+    "missingSalaryPenalty",
+    "autoSkipScoreThreshold",
+    "blockedCompanyKeywords",
+    "scoringInstructions",
+  ],
+  "reactive-resume": [
+    "pdfRenderer",
+    "rxresumeMode",
+    "rxresumeBaseResumeId",
+    "rxresumeApiKey",
+    "rxresumeEmail",
+    "rxresumePassword",
+    "rxresumeUrl",
+    "resumeProjects",
+  ],
+  webhooks: ["pipelineWebhookUrl", "jobCompleteWebhookUrl", "webhookSecret"],
+  "tracer-links": [],
+  environment: [
+    "ukvisajobsEmail",
+    "ukvisajobsPassword",
+    "adzunaAppId",
+    "adzunaAppKey",
+    "enableBasicAuth",
+    "basicAuthUser",
+    "basicAuthPassword",
+  ],
+  display: ["showSponsorInfo", "renderMarkdownInJobDescriptions"],
+  backup: ["backupEnabled", "backupHour", "backupMaxCount"],
+  "danger-zone": [],
+};
+
+function matchesSettingsSearch(
+  searchTerm: string,
+  item: SettingsSectionDescriptor,
+): boolean {
+  if (!searchTerm) return true;
+  const normalized = searchTerm.toLowerCase();
+  const haystack = [item.label, item.description, ...item.searchTerms].join(
+    " ",
+  );
+  return haystack.toLowerCase().includes(normalized);
+}
+
+const getRxResumeValidationFieldsForMode = (
+  mode: RxResumeMode,
+): Array<keyof UpdateSettingsInput> =>
+  mode === "v5"
+    ? ["rxresumeApiKey", "rxresumeUrl"]
+    : ["rxresumeEmail", "rxresumePassword", "rxresumeUrl"];
+
+const toRxResumeValidationBadgeState = (
+  validation: ValidationResult,
+): RxResumeValidationBadgeState => ({
+  checked: true,
+  valid: validation.valid,
+  message: validation.valid ? null : (validation.message ?? null),
+  status: validation.valid ? null : (validation.status ?? null),
+});
 
 const normalizeLlmProviderValue = (
   value: string | null | undefined,
@@ -119,14 +380,21 @@ const NULL_SETTINGS_PAYLOAD: UpdateSettingsInput = {
   pipelineWebhookUrl: null,
   jobCompleteWebhookUrl: null,
   resumeProjects: null,
+  pdfRenderer: null,
   rxresumeMode: null,
   rxresumeBaseResumeId: null,
   showSponsorInfo: null,
+  renderMarkdownInJobDescriptions: null,
   chatStyleTone: null,
   chatStyleFormality: null,
   chatStyleConstraints: null,
   chatStyleDoNotUse: null,
+  chatStyleSummaryMaxWords: null,
+  chatStyleMaxKeywordsPerSkill: null,
+  chatStyleLanguageMode: null,
+  chatStyleManualLanguage: null,
   rxresumeEmail: null,
+  rxresumeUrl: null,
   rxresumePassword: null,
   rxresumeApiKey: null,
   basicAuthUser: null,
@@ -145,6 +413,10 @@ const NULL_SETTINGS_PAYLOAD: UpdateSettingsInput = {
   missingSalaryPenalty: null,
   autoSkipScoreThreshold: null,
   blockedCompanyKeywords: null,
+  scoringInstructions: null,
+  ghostwriterSystemPromptTemplate: null,
+  tailoringPromptTemplate: null,
+  scoringPromptTemplate: null,
 };
 
 const mapSettingsToForm = (data: AppSettings): UpdateSettingsInput => ({
@@ -158,14 +430,23 @@ const mapSettingsToForm = (data: AppSettings): UpdateSettingsInput => ({
   pipelineWebhookUrl: data.pipelineWebhookUrl.override ?? "",
   jobCompleteWebhookUrl: data.jobCompleteWebhookUrl.override ?? "",
   resumeProjects: data.resumeProjects.override,
+  pdfRenderer: data.pdfRenderer.override ?? data.pdfRenderer.value,
   rxresumeMode: data.rxresumeMode.override ?? data.rxresumeMode.value,
   rxresumeBaseResumeId: data.rxresumeBaseResumeId,
   showSponsorInfo: data.showSponsorInfo.override,
+  renderMarkdownInJobDescriptions:
+    data.renderMarkdownInJobDescriptions.override,
   chatStyleTone: data.chatStyleTone.override ?? "",
   chatStyleFormality: data.chatStyleFormality.override ?? "",
   chatStyleConstraints: data.chatStyleConstraints.override ?? "",
   chatStyleDoNotUse: data.chatStyleDoNotUse.override ?? "",
+  chatStyleSummaryMaxWords: data.chatStyleSummaryMaxWords.override ?? null,
+  chatStyleMaxKeywordsPerSkill:
+    data.chatStyleMaxKeywordsPerSkill.override ?? null,
+  chatStyleLanguageMode: data.chatStyleLanguageMode.override ?? null,
+  chatStyleManualLanguage: data.chatStyleManualLanguage.override ?? null,
   rxresumeEmail: data.rxresumeEmail ?? "",
+  rxresumeUrl: data.rxresumeUrl ?? "",
   rxresumePassword: "",
   rxresumeApiKey: "",
   basicAuthUser: data.basicAuthUser ?? "",
@@ -183,6 +464,11 @@ const mapSettingsToForm = (data: AppSettings): UpdateSettingsInput => ({
   missingSalaryPenalty: data.missingSalaryPenalty.override,
   autoSkipScoreThreshold: data.autoSkipScoreThreshold.override,
   blockedCompanyKeywords: data.blockedCompanyKeywords.override ?? [],
+  scoringInstructions: data.scoringInstructions.override ?? "",
+  ghostwriterSystemPromptTemplate:
+    data.ghostwriterSystemPromptTemplate.value ?? "",
+  tailoringPromptTemplate: data.tailoringPromptTemplate.value ?? "",
+  scoringPromptTemplate: data.scoringPromptTemplate.value ?? "",
 });
 
 const normalizeString = (value: string | null | undefined) => {
@@ -260,9 +546,21 @@ const getDerivedSettings = (settings: AppSettings | null) => {
       effective: settings?.jobCompleteWebhookUrl?.value ?? "",
       default: settings?.jobCompleteWebhookUrl?.default ?? "",
     },
+    reactiveResume: {
+      pdfRenderer: {
+        effective: settings?.pdfRenderer?.value ?? "rxresume",
+        default: settings?.pdfRenderer?.default ?? "rxresume",
+      },
+    },
     display: {
-      effective: settings?.showSponsorInfo?.value ?? true,
-      default: settings?.showSponsorInfo?.default ?? true,
+      showSponsorInfo: {
+        effective: settings?.showSponsorInfo?.value ?? true,
+        default: settings?.showSponsorInfo?.default ?? true,
+      },
+      renderMarkdownInJobDescriptions: {
+        effective: settings?.renderMarkdownInJobDescriptions?.value ?? true,
+        default: settings?.renderMarkdownInJobDescriptions?.default ?? true,
+      },
     },
     chat: {
       tone: {
@@ -280,6 +578,22 @@ const getDerivedSettings = (settings: AppSettings | null) => {
       doNotUse: {
         effective: settings?.chatStyleDoNotUse?.value ?? "",
         default: settings?.chatStyleDoNotUse?.default ?? "",
+      },
+      languageMode: {
+        effective: settings?.chatStyleLanguageMode?.value ?? "manual",
+        default: settings?.chatStyleLanguageMode?.default ?? "manual",
+      },
+      manualLanguage: {
+        effective: settings?.chatStyleManualLanguage?.value ?? "english",
+        default: settings?.chatStyleManualLanguage?.default ?? "english",
+      },
+      summaryMaxWords: {
+        effective: settings?.chatStyleSummaryMaxWords?.value ?? null,
+        default: settings?.chatStyleSummaryMaxWords?.default ?? null,
+      },
+      maxKeywordsPerSkill: {
+        effective: settings?.chatStyleMaxKeywordsPerSkill?.value ?? null,
+        default: settings?.chatStyleMaxKeywordsPerSkill?.default ?? null,
       },
     },
     envSettings: {
@@ -334,6 +648,24 @@ const getDerivedSettings = (settings: AppSettings | null) => {
         effective: settings?.blockedCompanyKeywords?.value ?? [],
         default: settings?.blockedCompanyKeywords?.default ?? [],
       },
+      scoringInstructions: {
+        effective: settings?.scoringInstructions?.value ?? "",
+        default: settings?.scoringInstructions?.default ?? "",
+      },
+    },
+    promptTemplates: {
+      ghostwriterSystemPromptTemplate: {
+        effective: settings?.ghostwriterSystemPromptTemplate?.value ?? "",
+        default: settings?.ghostwriterSystemPromptTemplate?.default ?? "",
+      },
+      tailoringPromptTemplate: {
+        effective: settings?.tailoringPromptTemplate?.value ?? "",
+        default: settings?.tailoringPromptTemplate?.default ?? "",
+      },
+      scoringPromptTemplate: {
+        effective: settings?.scoringPromptTemplate?.value ?? "",
+        default: settings?.scoringPromptTemplate?.default ?? "",
+      },
     },
   };
 };
@@ -341,6 +673,10 @@ const getDerivedSettings = (settings: AppSettings | null) => {
 export const SettingsPage: React.FC = () => {
   const queryClient = useQueryClient();
   const [settings, setSettings] = useState<AppSettings | null>(null);
+  const [activeSection, setActiveSection] =
+    useState<SettingsSectionId>("model");
+  const [openGroups, setOpenGroups] = useState<SettingsGroupId[]>([]);
+  const [settingsSearch, setSettingsSearch] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [rxresumeValidationStatuses, setRxresumeValidationStatuses] = useState<{
     v4: RxResumeValidationBadgeState;
@@ -380,6 +716,7 @@ export const SettingsPage: React.FC = () => {
   });
 
   const {
+    clearErrors,
     handleSubmit,
     reset,
     setError,
@@ -507,6 +844,7 @@ export const SettingsPage: React.FC = () => {
     model,
     pipelineWebhook,
     jobCompleteWebhook,
+    reactiveResume,
     display,
     chat,
     envSettings,
@@ -514,6 +852,7 @@ export const SettingsPage: React.FC = () => {
     profileProjects,
     backup,
     scoring,
+    promptTemplates,
   } = derived;
 
   const handleCreateBackup = async () => {
@@ -574,6 +913,27 @@ export const SettingsPage: React.FC = () => {
     }
   }, [refreshReadiness]);
 
+  const setRxResumeValidationStatus = useCallback(
+    (mode: RxResumeMode, validation: ValidationResult) => {
+      setRxresumeValidationStatuses((current) => ({
+        ...current,
+        [mode]: toRxResumeValidationBadgeState(validation),
+      }));
+    },
+    [],
+  );
+
+  const clearRxResumeValidationFeedback = useCallback(
+    (mode: RxResumeMode) => {
+      setRxresumeValidationStatuses((current) => ({
+        ...current,
+        [mode]: EMPTY_RXRESUME_VALIDATION_BADGE_STATE,
+      }));
+      clearErrors(getRxResumeValidationFieldsForMode(mode));
+    },
+    [clearErrors],
+  );
+
   const validateRxresumeMode = useCallback(
     async (
       mode: RxResumeMode,
@@ -590,6 +950,7 @@ export const SettingsPage: React.FC = () => {
         validate: api.validateRxresume,
         persist: api.updateSettings,
         persistOnSuccess,
+        skipPrecheck: silent,
         getPrecheckMessage: (failure) => RXRESUME_PRECHECK_MESSAGES[failure],
         getValidationErrorMessage: (error) =>
           error instanceof Error ? error.message : "RxResume validation failed",
@@ -597,16 +958,7 @@ export const SettingsPage: React.FC = () => {
           error instanceof Error ? error.message : "RxResume validation failed",
       });
 
-      setRxresumeValidationStatuses((current) => ({
-        ...current,
-        [mode]: {
-          checked: true,
-          valid: result.validation.valid,
-          message: result.validation.valid
-            ? null
-            : (result.validation.message ?? null),
-        },
-      }));
+      setRxResumeValidationStatus(mode, result.validation);
 
       if (result.updatedSettings) {
         setSettings(result.updatedSettings);
@@ -637,7 +989,7 @@ export const SettingsPage: React.FC = () => {
           `Reactive Resume ${mode} validation failed`,
       );
     },
-    [getValues, queryClient, storedRxResume],
+    [getValues, queryClient, setRxResumeValidationStatus, storedRxResume],
   );
 
   useEffect(() => {
@@ -653,7 +1005,7 @@ export const SettingsPage: React.FC = () => {
         validateRxresumeMode(mode, { silent: true, persistOnSuccess: false }),
       ),
     );
-  }, [settings, rxresumeValidationStatuses, validateRxresumeMode]);
+  }, [rxresumeValidationStatuses, settings, validateRxresumeMode]);
 
   const effectiveProfileProjects =
     rxResumeProjectsOverride ??
@@ -692,6 +1044,10 @@ export const SettingsPage: React.FC = () => {
 
       if (dirtyFields.rxresumeEmail || dirtyFields.rxresumePassword) {
         envPayload.rxresumeEmail = normalizeString(data.rxresumeEmail);
+      }
+
+      if (dirtyFields.rxresumeUrl) {
+        envPayload.rxresumeUrl = normalizeString(data.rxresumeUrl);
       }
 
       if (dirtyFields.ukvisajobsEmail || dirtyFields.ukvisajobsPassword) {
@@ -758,21 +1114,62 @@ export const SettingsPage: React.FC = () => {
         if (value !== undefined) envPayload.webhookSecret = value;
       }
 
-      const payload: UpdateSettingsInput = {
-        model: normalizeString(data.model),
-        modelScorer: normalizeString(data.modelScorer),
-        modelTailoring: normalizeString(data.modelTailoring),
-        modelProjectSelection: normalizeString(data.modelProjectSelection),
+      const payload: Partial<UpdateSettingsInput> = {
+        model: dirtyFields.llmProvider
+          ? dirtyFields.model
+            ? normalizeString(data.model)
+            : null
+          : normalizeString(data.model),
+        modelScorer: dirtyFields.llmProvider
+          ? dirtyFields.modelScorer
+            ? normalizeString(data.modelScorer)
+            : null
+          : normalizeString(data.modelScorer),
+        modelTailoring: dirtyFields.llmProvider
+          ? dirtyFields.modelTailoring
+            ? normalizeString(data.modelTailoring)
+            : null
+          : normalizeString(data.modelTailoring),
+        modelProjectSelection: dirtyFields.llmProvider
+          ? dirtyFields.modelProjectSelection
+            ? normalizeString(data.modelProjectSelection)
+            : null
+          : normalizeString(data.modelProjectSelection),
         pipelineWebhookUrl: normalizeString(data.pipelineWebhookUrl),
         jobCompleteWebhookUrl: normalizeString(data.jobCompleteWebhookUrl),
         resumeProjects: resumeProjectsOverride,
-        rxresumeMode: data.rxresumeMode ?? "v5",
-        rxresumeBaseResumeId: normalizeString(data.rxresumeBaseResumeId),
-        showSponsorInfo: nullIfSame(data.showSponsorInfo, display.default),
+        pdfRenderer: nullIfSame(
+          data.pdfRenderer,
+          reactiveResume.pdfRenderer.default,
+        ),
+        ...(dirtyFields.rxresumeMode
+          ? { rxresumeMode: data.rxresumeMode ?? "v5" }
+          : {}),
+        ...(dirtyFields.rxresumeBaseResumeId
+          ? { rxresumeBaseResumeId: normalizeString(data.rxresumeBaseResumeId) }
+          : {}),
+        showSponsorInfo: nullIfSame(
+          data.showSponsorInfo,
+          display.showSponsorInfo.default,
+        ),
+        renderMarkdownInJobDescriptions: nullIfSame(
+          data.renderMarkdownInJobDescriptions,
+          display.renderMarkdownInJobDescriptions.default,
+        ),
         chatStyleTone: normalizeString(data.chatStyleTone),
         chatStyleFormality: normalizeString(data.chatStyleFormality),
         chatStyleConstraints: normalizeString(data.chatStyleConstraints),
         chatStyleDoNotUse: normalizeString(data.chatStyleDoNotUse),
+        chatStyleSummaryMaxWords: Number.isNaN(data.chatStyleSummaryMaxWords)
+          ? null
+          : (data.chatStyleSummaryMaxWords ?? null),
+        chatStyleMaxKeywordsPerSkill: Number.isNaN(
+          data.chatStyleMaxKeywordsPerSkill,
+        )
+          ? null
+          : (data.chatStyleMaxKeywordsPerSkill ?? null),
+        chatStyleLanguageMode: data.chatStyleLanguageMode ?? null,
+        chatStyleManualLanguage: data.chatStyleManualLanguage ?? null,
         backupEnabled: nullIfSame(
           data.backupEnabled,
           backup.backupEnabled.default,
@@ -799,18 +1196,107 @@ export const SettingsPage: React.FC = () => {
             ? null
             : normalized;
         })(),
+        scoringInstructions: nullIfSame(
+          normalizeString(data.scoringInstructions),
+          scoring.scoringInstructions.default,
+        ),
+        ghostwriterSystemPromptTemplate: nullIfSame(
+          normalizeString(data.ghostwriterSystemPromptTemplate),
+          promptTemplates.ghostwriterSystemPromptTemplate.default,
+        ),
+        tailoringPromptTemplate: nullIfSame(
+          normalizeString(data.tailoringPromptTemplate),
+          promptTemplates.tailoringPromptTemplate.default,
+        ),
+        scoringPromptTemplate: nullIfSame(
+          normalizeString(data.scoringPromptTemplate),
+          promptTemplates.scoringPromptTemplate.default,
+        ),
         ...envPayload,
       };
 
-      // Remove virtual field because the backend doesn't expect it
-      // this exists only to toggle the UI
-      // need to track it so that the save button is enabled when it changes
-      delete payload.enableBasicAuth;
+      const shouldValidateRxResumeBeforeSave = Boolean(
+        dirtyFields.rxresumeMode ||
+          dirtyFields.rxresumeUrl ||
+          dirtyFields.rxresumeApiKey ||
+          dirtyFields.rxresumeEmail ||
+          dirtyFields.rxresumePassword,
+      );
+      const rxResumeValidationMode = (data.rxresumeMode ??
+        rxresumeMode) as RxResumeMode;
+      let rxResumeSaveWarningMessage: string | null = null;
+
+      if (shouldValidateRxResumeBeforeSave) {
+        const validationDraft = getRxResumeCredentialDrafts(data);
+        const precheckFailure = getRxResumeCredentialPrecheckFailure({
+          mode: rxResumeValidationMode,
+          stored: storedRxResume,
+          draft: validationDraft,
+        });
+
+        if (!precheckFailure) {
+          const preserveBlankFields = [
+            ...(dirtyFields.rxresumeEmail ? (["email"] as const) : []),
+            ...(dirtyFields.rxresumePassword ? (["password"] as const) : []),
+            ...(dirtyFields.rxresumeApiKey ? (["apiKey"] as const) : []),
+            ...(dirtyFields.rxresumeUrl ? (["baseUrl"] as const) : []),
+          ];
+          const validation = await api.validateRxresume({
+            mode: rxResumeValidationMode,
+            ...toRxResumeValidationPayload(validationDraft, {
+              preserveBlankFields: preserveBlankFields as Array<
+                keyof ReturnType<typeof getRxResumeCredentialDrafts>
+              >,
+            }),
+          });
+
+          setRxResumeValidationStatus(rxResumeValidationMode, validation);
+
+          if (isRxResumeBlockingValidationFailure(validation)) {
+            clearErrors(
+              getRxResumeValidationFieldsForMode(rxResumeValidationMode),
+            );
+            if (rxResumeValidationMode === "v5") {
+              setError("rxresumeApiKey", {
+                type: "manual",
+                message:
+                  validation.message ??
+                  "Reactive Resume v5 API key is invalid.",
+              });
+            } else {
+              setError("rxresumeEmail", {
+                type: "manual",
+                message:
+                  validation.message ??
+                  "Reactive Resume v4 email/password is invalid.",
+              });
+              setError("rxresumePassword", {
+                type: "manual",
+                message:
+                  validation.message ??
+                  "Reactive Resume v4 email/password is invalid.",
+              });
+            }
+            return;
+          }
+
+          clearErrors(
+            getRxResumeValidationFieldsForMode(rxResumeValidationMode),
+          );
+          if (isRxResumeAvailabilityValidationFailure(validation)) {
+            rxResumeSaveWarningMessage =
+              "Settings saved, but JobOps could not verify Reactive Resume because the instance is unavailable.";
+          }
+        }
+      }
 
       const updated = await updateSettingsMutation.mutateAsync(payload);
       setSettings(updated);
       reset(mapSettingsToForm(updated));
       toast.success("Settings saved");
+      if (rxResumeSaveWarningMessage) {
+        toast.info(rxResumeSaveWarningMessage);
+      }
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Failed to save settings";
@@ -922,121 +1408,426 @@ export const SettingsPage: React.FC = () => {
     }
   };
 
+  const handleDiscardChanges = () => {
+    if (!settings) return;
+    reset(mapSettingsToForm(settings));
+    toast.success("Discarded unsaved changes");
+  };
+
+  const filteredNavGroups = useMemo(
+    () =>
+      SETTINGS_NAV_GROUPS.map((group) => ({
+        ...group,
+        items: group.items.filter((item) =>
+          matchesSettingsSearch(settingsSearch, item),
+        ),
+      })).filter((group) => group.items.length > 0),
+    [settingsSearch],
+  );
+
+  const visibleSectionIds = useMemo(
+    () =>
+      filteredNavGroups.flatMap((group) => group.items.map((item) => item.id)),
+    [filteredNavGroups],
+  );
+
+  useEffect(() => {
+    if (visibleSectionIds.length === 0) return;
+    if (!visibleSectionIds.includes(activeSection)) {
+      setActiveSection(visibleSectionIds[0]);
+    }
+  }, [activeSection, visibleSectionIds]);
+
+  const activeSectionMeta =
+    SETTINGS_NAV_GROUPS.flatMap((group) => group.items).find(
+      (item) => item.id === activeSection,
+    ) ?? SETTINGS_NAV_GROUPS[0].items[0];
+  const activeGroup =
+    SETTINGS_NAV_GROUPS.find((group) =>
+      group.items.some((item) => item.id === activeSection),
+    ) ?? SETTINGS_NAV_GROUPS[0];
+
+  const sectionHasDirtyState = (sectionId: SettingsSectionId) =>
+    SECTION_FIELD_MAP[sectionId].some((field) => Boolean(dirtyFields[field]));
+  const sectionHasErrors = (sectionId: SettingsSectionId) =>
+    SECTION_FIELD_MAP[sectionId].some((field) => Boolean(errors[field]));
+
+  const getSectionBadge = (sectionId: SettingsSectionId) => {
+    if (sectionId === "danger-zone") {
+      return { label: "Sensitive", variant: "destructive" as const };
+    }
+    if (sectionHasErrors(sectionId)) {
+      return { label: "Needs attention", variant: "destructive" as const };
+    }
+    if (sectionHasDirtyState(sectionId)) {
+      return { label: "Unsaved", variant: "secondary" as const };
+    }
+
+    switch (sectionId) {
+      case "model":
+        return model.llmProvider
+          ? { label: "Configured", variant: "outline" as const }
+          : { label: "Using defaults", variant: "secondary" as const };
+      case "chat":
+        return chat.tone.effective || chat.constraints.effective
+          ? { label: "Ready", variant: "outline" as const }
+          : { label: "Using defaults", variant: "secondary" as const };
+      case "prompt-templates":
+        return promptTemplates.ghostwriterSystemPromptTemplate.effective !==
+          promptTemplates.ghostwriterSystemPromptTemplate.default ||
+          promptTemplates.tailoringPromptTemplate.effective !==
+            promptTemplates.tailoringPromptTemplate.default ||
+          promptTemplates.scoringPromptTemplate.effective !==
+            promptTemplates.scoringPromptTemplate.default
+          ? { label: "Customized", variant: "outline" as const }
+          : { label: "Using defaults", variant: "secondary" as const };
+      case "scoring":
+        return scoring.autoSkipScoreThreshold.effective != null ||
+          scoring.blockedCompanyKeywords.effective.length > 0 ||
+          scoring.scoringInstructions.effective
+          ? { label: "Customized", variant: "outline" as const }
+          : { label: "Default rules", variant: "secondary" as const };
+      case "reactive-resume":
+        return hasRxResumeAccess
+          ? { label: "Connected", variant: "outline" as const }
+          : null;
+      case "webhooks":
+        return pipelineWebhook.effective || jobCompleteWebhook.effective
+          ? { label: "Configured", variant: "outline" as const }
+          : { label: "Optional", variant: "secondary" as const };
+      case "tracer-links":
+        return tracerReadiness?.status === "ready"
+          ? { label: "Ready", variant: "outline" as const }
+          : tracerReadiness
+            ? { label: "Check required", variant: "secondary" as const }
+            : { label: "Not configured", variant: "secondary" as const };
+      case "environment":
+        return envSettings.readable.ukvisajobsEmail ||
+          envSettings.readable.adzunaAppId ||
+          envSettings.basicAuthActive
+          ? { label: "Configured", variant: "outline" as const }
+          : null;
+      case "display":
+        return { label: "Active", variant: "secondary" as const };
+      case "backup":
+        return backup.backupEnabled.effective
+          ? { label: "Scheduled", variant: "outline" as const }
+          : { label: "Manual only", variant: "secondary" as const };
+      default:
+        return { label: "Ready", variant: "outline" as const };
+    }
+  };
+
+  const selectedSectionBadge = getSectionBadge(activeSection);
+  const dirtySectionCount = SETTINGS_NAV_GROUPS.flatMap(
+    (group) => group.items,
+  ).filter((item) => sectionHasDirtyState(item.id)).length;
+  const activeSectionIsDirty = sectionHasDirtyState(activeSection);
+
+  let activeSectionContent: React.ReactNode;
+  switch (activeSection) {
+    case "model":
+      activeSectionContent = (
+        <ModelSettingsSection
+          values={model}
+          isLoading={isLoading}
+          isSaving={isSaving}
+          layoutMode="panel"
+        />
+      );
+      break;
+    case "chat":
+      activeSectionContent = (
+        <ChatSettingsSection
+          values={chat}
+          isLoading={isLoading}
+          isSaving={isSaving}
+          layoutMode="panel"
+        />
+      );
+      break;
+    case "prompt-templates":
+      activeSectionContent = (
+        <PromptTemplatesSection
+          values={promptTemplates}
+          isLoading={isLoading}
+          isSaving={isSaving}
+          layoutMode="panel"
+        />
+      );
+      break;
+    case "scoring":
+      activeSectionContent = (
+        <ScoringSettingsSection
+          values={scoring}
+          isLoading={isLoading}
+          isSaving={isSaving}
+          layoutMode="panel"
+        />
+      );
+      break;
+    case "reactive-resume":
+      activeSectionContent = (
+        <ReactiveResumeSection
+          rxResumeBaseResumeIdDraft={rxResumeBaseResumeIdDraft}
+          onRxresumeModeChange={(mode) => {
+            const nextId = getBaseResumeIdForMode(mode);
+            setRxResumeBaseResumeIdDraft(nextId);
+            setValue("rxresumeBaseResumeId", nextId, { shouldDirty: true });
+            setRxResumeProjectsOverride(null);
+          }}
+          setRxResumeBaseResumeIdDraft={(value) => {
+            const mode = (getValues("rxresumeMode") ??
+              rxresumeMode) as RxResumeMode;
+            setBaseResumeIdForMode(mode, value);
+            setRxResumeBaseResumeIdDraft(value);
+            setValue("rxresumeBaseResumeId", value, { shouldDirty: true });
+          }}
+          hasRxResumeAccess={hasRxResumeAccess}
+          rxresumeMode={rxresumeMode}
+          onCredentialFieldEdit={clearRxResumeValidationFeedback}
+          validationStatuses={rxresumeValidationStatuses}
+          profileProjects={effectiveProfileProjects}
+          lockedCount={lockedCount}
+          maxProjectsTotal={effectiveMaxProjectsTotal}
+          isProjectsLoading={isFetchingRxResumeProjects}
+          isLoading={isLoading}
+          isSaving={isSaving}
+          layoutMode="panel"
+        />
+      );
+      break;
+    case "webhooks":
+      activeSectionContent = (
+        <WebhooksSection
+          pipelineWebhook={pipelineWebhook}
+          jobCompleteWebhook={jobCompleteWebhook}
+          webhookSecretHint={envSettings.private.webhookSecretHint}
+          isLoading={isLoading}
+          isSaving={isSaving}
+          layoutMode="panel"
+        />
+      );
+      break;
+    case "tracer-links":
+      activeSectionContent = (
+        <TracerLinksSettingsSection
+          readiness={tracerReadiness}
+          isLoading={isLoading || isTracerReadinessLoading}
+          isChecking={isTracerReadinessChecking}
+          onVerifyNow={handleVerifyTracerReadiness}
+          layoutMode="panel"
+        />
+      );
+      break;
+    case "environment":
+      activeSectionContent = (
+        <EnvironmentSettingsSection
+          values={envSettings}
+          isLoading={isLoading}
+          isSaving={isSaving}
+          layoutMode="panel"
+        />
+      );
+      break;
+    case "display":
+      activeSectionContent = (
+        <DisplaySettingsSection
+          values={display}
+          isLoading={isLoading}
+          isSaving={isSaving}
+          layoutMode="panel"
+        />
+      );
+      break;
+    case "backup":
+      activeSectionContent = (
+        <BackupSettingsSection
+          values={backup}
+          backups={backups}
+          nextScheduled={nextScheduled}
+          isLoading={isLoading || isLoadingBackups}
+          isSaving={isSaving}
+          onCreateBackup={handleCreateBackup}
+          onDeleteBackup={handleDeleteBackup}
+          isCreatingBackup={isCreatingBackup}
+          isDeletingBackup={isDeletingBackup}
+          layoutMode="panel"
+        />
+      );
+      break;
+    case "danger-zone":
+      activeSectionContent = (
+        <DangerZoneSection
+          statusesToClear={statusesToClear}
+          toggleStatusToClear={toggleStatusToClear}
+          handleClearByStatuses={handleClearByStatuses}
+          handleClearDatabase={handleClearDatabase}
+          handleClearByScore={handleClearByScore}
+          isLoading={isLoading}
+          isSaving={isSaving}
+          layoutMode="panel"
+        />
+      );
+      break;
+    default:
+      activeSectionContent = null;
+  }
+
   return (
     <FormProvider {...methods}>
       <PageHeader
         icon={Settings}
         title="Settings"
-        subtitle="Configure runtime behavior for this app."
+        subtitle="Configure AI, scoring, integrations, and recovery from one focused workspace."
       />
 
-      <main className="container mx-auto max-w-3xl space-y-6 px-4 py-6 pb-12">
-        <Accordion type="multiple" className="w-full space-y-4">
-          <ModelSettingsSection
-            values={model}
-            isLoading={isLoading}
-            isSaving={isSaving}
-          />
-          <WebhooksSection
-            pipelineWebhook={pipelineWebhook}
-            jobCompleteWebhook={jobCompleteWebhook}
-            webhookSecretHint={envSettings.private.webhookSecretHint}
-            isLoading={isLoading}
-            isSaving={isSaving}
-          />
-          <ReactiveResumeSection
-            rxResumeBaseResumeIdDraft={rxResumeBaseResumeIdDraft}
-            onRxresumeModeChange={(mode) => {
-              const nextId = getBaseResumeIdForMode(mode);
-              setRxResumeBaseResumeIdDraft(nextId);
-              setValue("rxresumeBaseResumeId", nextId, { shouldDirty: true });
-              setRxResumeProjectsOverride(null);
-            }}
-            setRxResumeBaseResumeIdDraft={(value) => {
-              const mode = (getValues("rxresumeMode") ??
-                rxresumeMode) as RxResumeMode;
-              setBaseResumeIdForMode(mode, value);
-              setRxResumeBaseResumeIdDraft(value);
-              setValue("rxresumeBaseResumeId", value, { shouldDirty: true });
-            }}
-            hasRxResumeAccess={hasRxResumeAccess}
-            rxresumeMode={rxresumeMode}
-            validationStatuses={rxresumeValidationStatuses}
-            profileProjects={effectiveProfileProjects}
-            lockedCount={lockedCount}
-            maxProjectsTotal={effectiveMaxProjectsTotal}
-            isProjectsLoading={isFetchingRxResumeProjects}
-            isLoading={isLoading}
-            isSaving={isSaving}
-          />
-          <TracerLinksSettingsSection
-            readiness={tracerReadiness}
-            isLoading={isLoading || isTracerReadinessLoading}
-            isChecking={isTracerReadinessChecking}
-            onVerifyNow={handleVerifyTracerReadiness}
-          />
-          <DisplaySettingsSection
-            values={display}
-            isLoading={isLoading}
-            isSaving={isSaving}
-          />
-          <ChatSettingsSection
-            values={chat}
-            isLoading={isLoading}
-            isSaving={isSaving}
-          />
-          <ScoringSettingsSection
-            values={scoring}
-            isLoading={isLoading}
-            isSaving={isSaving}
-          />
-          <EnvironmentSettingsSection
-            values={envSettings}
-            isLoading={isLoading}
-            isSaving={isSaving}
-          />
-          <BackupSettingsSection
-            values={backup}
-            backups={backups}
-            nextScheduled={nextScheduled}
-            isLoading={isLoading || isLoadingBackups}
-            isSaving={isSaving}
-            onCreateBackup={handleCreateBackup}
-            onDeleteBackup={handleDeleteBackup}
-            isCreatingBackup={isCreatingBackup}
-            isDeletingBackup={isDeletingBackup}
-          />
-          <DangerZoneSection
-            statusesToClear={statusesToClear}
-            toggleStatusToClear={toggleStatusToClear}
-            handleClearByStatuses={handleClearByStatuses}
-            handleClearDatabase={handleClearDatabase}
-            handleClearByScore={handleClearByScore}
-            isLoading={isLoading}
-            isSaving={isSaving}
-          />
-        </Accordion>
+      <main className="container mx-auto max-w-7xl px-4 py-6 pb-12">
+        <div className="grid gap-6 lg:grid-cols-[300px_minmax(0,1fr)]">
+          <aside className="lg:sticky lg:top-6 lg:self-start">
+            <div className="overflow-hidden rounded-2xl border border-border/70 bg-background/95">
+              <div className="border-b px-4 py-4">
+                <div className="relative">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    value={settingsSearch}
+                    onChange={(event) => setSettingsSearch(event.target.value)}
+                    placeholder="Search settings"
+                    className="pl-9"
+                    aria-label="Search settings"
+                  />
+                </div>
+              </div>
+              <div className="p-2">
+                {filteredNavGroups.length > 0 ? (
+                  <Accordion
+                    type="multiple"
+                    value={
+                      settingsSearch.trim()
+                        ? filteredNavGroups.map((group) => group.id)
+                        : openGroups
+                    }
+                    onValueChange={(value) =>
+                      setOpenGroups(value as SettingsGroupId[])
+                    }
+                    className="space-y-1"
+                  >
+                    {filteredNavGroups.map((group) => (
+                      <AccordionItem
+                        key={group.id}
+                        value={group.id}
+                        className="border-b border-border/60 px-2 last:border-b-0"
+                      >
+                        <AccordionTrigger className="py-3 text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground hover:no-underline">
+                          {group.label}
+                        </AccordionTrigger>
+                        <AccordionContent className="pb-3">
+                          <div className="space-y-1">
+                            {group.items.map((item) => {
+                              const isActive = item.id === activeSection;
+                              return (
+                                <Button
+                                  key={item.id}
+                                  type="button"
+                                  variant="ghost"
+                                  className={`h-9 w-full justify-start rounded-md px-3 text-left text-sm font-medium ${
+                                    isActive
+                                      ? "border border-orange-400/40 bg-orange-500/12 text-orange-100 hover:bg-orange-500/18 hover:text-orange-50"
+                                      : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+                                  }`}
+                                  onClick={() => setActiveSection(item.id)}
+                                >
+                                  {item.label}
+                                </Button>
+                              );
+                            })}
+                          </div>
+                        </AccordionContent>
+                      </AccordionItem>
+                    ))}
+                  </Accordion>
+                ) : (
+                  <div className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
+                    No settings matched “{settingsSearch.trim()}”.
+                  </div>
+                )}
+              </div>
+            </div>
+          </aside>
 
-        <div className="flex flex-wrap gap-2">
-          <Button
-            onClick={handleSubmit(onSave)}
-            disabled={isLoading || isSaving || !canSave}
-          >
-            {isSaving ? "Saving..." : "Save"}
-          </Button>
-          <Button
-            variant="outline"
-            onClick={handleReset}
-            disabled={isLoading || isSaving || !settings}
-          >
-            Reset to default
-          </Button>
+          <section className="space-y-4">
+            <header className="space-y-4 border-b border-border/70 pb-5">
+              <div className="flex flex-wrap items-center gap-2 text-[11px] font-medium uppercase tracking-[0.24em] text-muted-foreground">
+                <span>{activeGroup.label}</span>
+                <span>/</span>
+                <span>{activeSectionMeta.label}</span>
+              </div>
+
+              <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+                <div className="space-y-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="text-2xl font-semibold tracking-tight">
+                      {activeSectionMeta.label}
+                    </h2>
+                    {selectedSectionBadge ? (
+                      <Badge variant={selectedSectionBadge.variant}>
+                        {selectedSectionBadge.label}
+                      </Badge>
+                    ) : null}
+                    {dirtySectionCount > 0 ? (
+                      <Badge variant="secondary">
+                        {dirtySectionCount} unsaved section
+                        {dirtySectionCount !== 1 ? "s" : ""}
+                      </Badge>
+                    ) : null}
+                  </div>
+                  <p className="max-w-2xl text-sm leading-6 text-muted-foreground">
+                    {activeSectionMeta.description}
+                  </p>
+                </div>
+
+                <div className="flex shrink-0 flex-nowrap gap-2 self-start">
+                  {activeSectionIsDirty ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="whitespace-nowrap"
+                      onClick={handleDiscardChanges}
+                      disabled={isLoading || isSaving || !isDirty}
+                    >
+                      Discard changes
+                    </Button>
+                  ) : null}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="whitespace-nowrap"
+                    onClick={handleReset}
+                    disabled={isLoading || isSaving || !settings}
+                  >
+                    Reset to defaults
+                  </Button>
+                  <Button
+                    type="button"
+                    className="whitespace-nowrap"
+                    onClick={handleSubmit(onSave)}
+                    disabled={isLoading || isSaving || !canSave}
+                  >
+                    {isSaving ? "Saving..." : "Save changes"}
+                  </Button>
+                </div>
+              </div>
+            </header>
+
+            {activeSectionContent}
+
+            {Object.keys(errors).length > 0 && (
+              <div className="rounded-xl border border-destructive/30 bg-destructive/[0.03] px-4 py-3 text-sm text-destructive">
+                Please fix the highlighted errors before saving.
+              </div>
+            )}
+          </section>
         </div>
-        {Object.keys(errors).length > 0 && (
-          <div className="text-destructive text-sm mt-2">
-            Please fix the errors before saving.
-          </div>
-        )}
       </main>
     </FormProvider>
   );

@@ -1,5 +1,14 @@
 import { z } from "zod";
-import type { ResumeProjectsSettings } from "./types/settings";
+import { getDefaultPromptTemplate } from "./prompt-template-definitions";
+import {
+  CHAT_STYLE_LANGUAGE_MODE_VALUES,
+  CHAT_STYLE_MANUAL_LANGUAGE_VALUES,
+  type ChatStyleLanguageMode,
+  type ChatStyleManualLanguage,
+  PDF_RENDERER_VALUES,
+  type PdfRenderer,
+  type ResumeProjectsSettings,
+} from "./types/settings";
 
 function parseNonEmptyStringOrNull(raw: string | undefined): string | null {
   return raw === undefined || raw === "" ? null : raw;
@@ -26,6 +35,36 @@ function parseBitBoolOrNull(raw: string | undefined): boolean | null {
   return raw === "true" || raw === "1";
 }
 
+function normalizeLlmProviderOrNull(raw: string | undefined): string | null {
+  if (raw === undefined) return null;
+  const normalized = raw.trim().toLowerCase().replace(/-/g, "_");
+  return normalized ? normalized : null;
+}
+
+export const DEFAULT_GEMINI_MODEL = "google/gemini-3-flash-preview";
+export const DEFAULT_OPENAI_MODEL = "gpt-5.4-mini";
+
+export function getDefaultModelForProvider(
+  provider: string | null | undefined,
+  fallbackModel?: string | null,
+): string {
+  const trimmedFallback = fallbackModel?.trim();
+  if (trimmedFallback) {
+    return trimmedFallback;
+  }
+
+  const normalizedProvider = normalizeLlmProviderOrNull(provider ?? undefined);
+
+  if (normalizedProvider === "openai") {
+    return DEFAULT_OPENAI_MODEL;
+  }
+
+  if (normalizedProvider === "gemini") {
+    return DEFAULT_GEMINI_MODEL;
+  }
+  return DEFAULT_GEMINI_MODEL;
+}
+
 function serializeNullableNumber(
   value: number | null | undefined,
 ): string | null {
@@ -43,6 +82,58 @@ function serializeBitBool(value: boolean | null | undefined): string | null {
   return value ? "1" : "0";
 }
 
+function createEnumParser<const TValues extends readonly [string, ...string[]]>(
+  values: TValues,
+): (raw: string | undefined) => TValues[number] | null {
+  const allowedValues = new Set<string>(values);
+
+  return (raw: string | undefined): TValues[number] | null => {
+    if (!raw) return null;
+    return allowedValues.has(raw) ? (raw as TValues[number]) : null;
+  };
+}
+
+function createEnumArrayParser<
+  const TValues extends readonly [string, ...string[]],
+>(values: TValues): (raw: string | undefined) => TValues[number][] | null {
+  const allowedValues = new Set<string>(values);
+
+  return (raw: string | undefined): TValues[number][] | null => {
+    if (!raw) return null;
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      if (!Array.isArray(parsed)) return null;
+
+      const out: TValues[number][] = [];
+      const seen = new Set<string>();
+      for (const value of parsed) {
+        if (typeof value !== "string" || !allowedValues.has(value)) {
+          return null;
+        }
+        if (seen.has(value)) continue;
+        seen.add(value);
+        out.push(value as TValues[number]);
+      }
+      if (out.length === 0) return null;
+      return out;
+    } catch {
+      return null;
+    }
+  };
+}
+
+const parseChatStyleLanguageModeOrNull = createEnumParser(
+  CHAT_STYLE_LANGUAGE_MODE_VALUES,
+);
+
+const parseChatStyleManualLanguageOrNull = createEnumParser(
+  CHAT_STYLE_MANUAL_LANGUAGE_VALUES,
+);
+const parsePdfRendererOrNull = createEnumParser(PDF_RENDERER_VALUES);
+
+const WORKPLACE_TYPE_VALUES = ["remote", "hybrid", "onsite"] as const;
+const parseWorkplaceTypesOrNull = createEnumArrayParser(WORKPLACE_TYPE_VALUES);
+
 export const resumeProjectsSchema = z.object({
   maxProjects: z.number().int().min(0).max(100),
   lockedProjectIds: z.array(z.string().trim().min(1)).max(200),
@@ -56,8 +147,11 @@ export const settingsRegistry = {
     schema: z.string().trim().max(200),
     default: (): string =>
       typeof process !== "undefined"
-        ? process.env.MODEL || "google/gemini-3-flash-preview"
-        : "google/gemini-3-flash-preview",
+        ? getDefaultModelForProvider(
+            process.env.LLM_PROVIDER,
+            process.env.MODEL,
+          )
+        : DEFAULT_GEMINI_MODEL,
     parse: parseNonEmptyStringOrNull,
     serialize: (value: string | null | undefined): string | null =>
       value ?? null,
@@ -66,16 +160,23 @@ export const settingsRegistry = {
     kind: "typed" as const,
     envKey: "LLM_PROVIDER",
     schema: z.preprocess(
-      (v) => (v === "" ? null : v),
+      (v) => (typeof v === "string" ? normalizeLlmProviderOrNull(v) : v),
       z
-        .enum(["openrouter", "lmstudio", "ollama", "openai", "gemini"])
+        .enum([
+          "openrouter",
+          "lmstudio",
+          "ollama",
+          "openai",
+          "openai_compatible",
+          "gemini",
+        ])
         .nullable(),
     ),
     default: (): string =>
       typeof process !== "undefined"
-        ? process.env.LLM_PROVIDER || "openrouter"
+        ? normalizeLlmProviderOrNull(process.env.LLM_PROVIDER) || "openrouter"
         : "openrouter",
-    parse: parseNonEmptyStringOrNull,
+    parse: normalizeLlmProviderOrNull,
     serialize: (value: string | null | undefined): string | null =>
       value ?? null,
   },
@@ -152,6 +253,14 @@ export const settingsRegistry = {
     serialize: (value: "v4" | "v5" | null | undefined): string | null =>
       value ?? null,
   },
+  pdfRenderer: {
+    kind: "typed" as const,
+    schema: z.enum(PDF_RENDERER_VALUES),
+    default: (): PdfRenderer => "rxresume",
+    parse: parsePdfRendererOrNull,
+    serialize: (value: PdfRenderer | null | undefined): string | null =>
+      value ?? null,
+  },
   ukvisajobsMaxJobs: {
     kind: "typed" as const,
     schema: z.number().int().min(1).max(1000),
@@ -179,6 +288,19 @@ export const settingsRegistry = {
     parse: parseIntOrNull,
     serialize: serializeNullableNumber,
   },
+  startupjobsMaxJobsPerTerm: {
+    kind: "typed" as const,
+    schema: z.number().int().min(1).max(1000),
+    default: (): number =>
+      parseInt(
+        typeof process !== "undefined"
+          ? process.env.STARTUPJOBS_MAX_RESULTS || "50"
+          : "50",
+        10,
+      ),
+    parse: parseIntOrNull,
+    serialize: serializeNullableNumber,
+  },
   searchTerms: {
     kind: "typed" as const,
     schema: z.array(z.string().trim().min(1).max(200)).max(100),
@@ -193,6 +315,17 @@ export const settingsRegistry = {
     parse: parseJsonArrayOrNull,
     serialize: serializeNullableJsonArray,
   },
+  workplaceTypes: {
+    kind: "typed" as const,
+    schema: z.array(z.enum(WORKPLACE_TYPE_VALUES)).min(1).max(3),
+    default: (): Array<(typeof WORKPLACE_TYPE_VALUES)[number]> => [
+      "remote",
+      "hybrid",
+      "onsite",
+    ],
+    parse: parseWorkplaceTypesOrNull,
+    serialize: serializeNullableJsonArray,
+  },
   blockedCompanyKeywords: {
     kind: "typed" as const,
     schema: z.array(z.string().trim().min(1).max(200)).max(200),
@@ -200,13 +333,46 @@ export const settingsRegistry = {
     parse: parseJsonArrayOrNull,
     serialize: serializeNullableJsonArray,
   },
+  scoringInstructions: {
+    kind: "typed" as const,
+    schema: z.string().trim().max(4000),
+    default: (): string => "",
+    parse: parseNonEmptyStringOrNull,
+    serialize: (value: string | null | undefined): string | null =>
+      value ?? null,
+  },
+  ghostwriterSystemPromptTemplate: {
+    kind: "typed" as const,
+    schema: z.string().trim().max(12000),
+    default: (): string =>
+      getDefaultPromptTemplate("ghostwriterSystemPromptTemplate"),
+    parse: parseNonEmptyStringOrNull,
+    serialize: (value: string | null | undefined): string | null =>
+      value ?? null,
+  },
+  tailoringPromptTemplate: {
+    kind: "typed" as const,
+    schema: z.string().trim().max(12000),
+    default: (): string => getDefaultPromptTemplate("tailoringPromptTemplate"),
+    parse: parseNonEmptyStringOrNull,
+    serialize: (value: string | null | undefined): string | null =>
+      value ?? null,
+  },
+  scoringPromptTemplate: {
+    kind: "typed" as const,
+    schema: z.string().trim().max(12000),
+    default: (): string => getDefaultPromptTemplate("scoringPromptTemplate"),
+    parse: parseNonEmptyStringOrNull,
+    serialize: (value: string | null | undefined): string | null =>
+      value ?? null,
+  },
   searchCities: {
     kind: "typed" as const,
     schema: z.string().trim().max(100),
     default: (): string =>
       typeof process !== "undefined"
-        ? process.env.SEARCH_CITIES || process.env.JOBSPY_LOCATION || "UK"
-        : "UK",
+        ? process.env.SEARCH_CITIES || process.env.JOBSPY_LOCATION || ""
+        : "",
     parse: parseNonEmptyStringOrNull,
     serialize: (value: string | null | undefined): string | null =>
       value ?? null,
@@ -236,6 +402,13 @@ export const settingsRegistry = {
       value ?? null,
   },
   showSponsorInfo: {
+    kind: "typed" as const,
+    schema: z.boolean(),
+    default: (): boolean => true,
+    parse: parseBitBoolOrNull,
+    serialize: serializeBitBool,
+  },
+  renderMarkdownInJobDescriptions: {
     kind: "typed" as const,
     schema: z.boolean(),
     default: (): boolean => true,
@@ -285,6 +458,48 @@ export const settingsRegistry = {
     parse: parseNonEmptyStringOrNull,
     serialize: (value: string | null | undefined): string | null =>
       value ?? null,
+  },
+  chatStyleSummaryMaxWords: {
+    kind: "typed" as const,
+    schema: z.number().int().min(1).max(500).nullable(),
+    default: (): number | null => null,
+    parse: parseIntOrNull,
+    serialize: serializeNullableNumber,
+  },
+  chatStyleMaxKeywordsPerSkill: {
+    kind: "typed" as const,
+    schema: z.number().int().min(1).max(50).nullable(),
+    default: (): number | null => null,
+    parse: parseIntOrNull,
+    serialize: serializeNullableNumber,
+  },
+  chatStyleLanguageMode: {
+    kind: "typed" as const,
+    schema: z.enum(CHAT_STYLE_LANGUAGE_MODE_VALUES),
+    default: (): ChatStyleLanguageMode =>
+      parseChatStyleLanguageModeOrNull(
+        typeof process !== "undefined"
+          ? process.env.CHAT_STYLE_LANGUAGE_MODE
+          : undefined,
+      ) ?? "manual",
+    parse: parseChatStyleLanguageModeOrNull,
+    serialize: (
+      value: ChatStyleLanguageMode | null | undefined,
+    ): string | null => value ?? null,
+  },
+  chatStyleManualLanguage: {
+    kind: "typed" as const,
+    schema: z.enum(CHAT_STYLE_MANUAL_LANGUAGE_VALUES),
+    default: (): ChatStyleManualLanguage =>
+      parseChatStyleManualLanguageOrNull(
+        typeof process !== "undefined"
+          ? process.env.CHAT_STYLE_MANUAL_LANGUAGE
+          : undefined,
+      ) ?? "english",
+    parse: parseChatStyleManualLanguageOrNull,
+    serialize: (
+      value: ChatStyleManualLanguage | null | undefined,
+    ): string | null => value ?? null,
   },
   backupEnabled: {
     kind: "typed" as const,
@@ -387,6 +602,14 @@ export const settingsRegistry = {
     kind: "string" as const,
     envKey: "RXRESUME_EMAIL",
     schema: z.string().trim().max(200),
+  },
+  rxresumeUrl: {
+    kind: "string" as const,
+    envKey: "RXRESUME_URL",
+    schema: z.preprocess(
+      (value) => (value === "" ? null : value),
+      z.string().trim().url().max(2000).nullable(),
+    ),
   },
   ukvisajobsEmail: {
     kind: "string" as const,

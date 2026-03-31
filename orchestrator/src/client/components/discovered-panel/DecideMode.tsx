@@ -1,8 +1,8 @@
+import { useSettings } from "@client/hooks/useSettings";
 import type { Job } from "@shared/types.js";
 import {
   ChevronUp,
   Edit2,
-  ExternalLink,
   Loader2,
   RefreshCcw,
   Sparkles,
@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import type React from "react";
 import { useMemo, useState } from "react";
+import { JobDescriptionMarkdown } from "@/client/components/JobDescriptionMarkdown";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -20,8 +21,9 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { FitAssessment, JobHeader, TailoredSummary } from "..";
 import { KbdHint } from "../KbdHint";
+import { OpenJobListingButton } from "../OpenJobListingButton";
 import { CollapsibleSection } from "./CollapsibleSection";
-import { getPlainDescription } from "./helpers";
+import { getRenderableJobDescription } from "./helpers";
 
 interface DecideModeProps {
   job: Job;
@@ -46,9 +48,10 @@ export const DecideMode: React.FC<DecideModeProps> = ({
 }) => {
   const [showDescription, setShowDescription] = useState(false);
   const jobLink = job.applicationLink || job.jobUrl;
+  const { renderMarkdownInJobDescriptions } = useSettings();
 
   const description = useMemo(
-    () => getPlainDescription(job.jobDescription),
+    () => getRenderableJobDescription(job.jobDescription),
     [job.jobDescription],
   );
 
@@ -58,6 +61,12 @@ export const DecideMode: React.FC<DecideModeProps> = ({
         <JobHeader job={job} onCheckSponsor={onCheckSponsor} />
 
         <div className="flex flex-col gap-2.5 pt-2 sm:flex-row">
+          {jobLink ? (
+            <OpenJobListingButton
+              href={jobLink}
+              className="flex-1 h-11 text-sm sm:h-10 sm:text-xs"
+            />
+          ) : null}
           <Button
             variant="outline"
             size="default"
@@ -97,9 +106,13 @@ export const DecideMode: React.FC<DecideModeProps> = ({
           label={`${showDescription ? "Hide" : "View"} Full Job Description`}
         >
           <div className="rounded-xl border border-border/40 bg-muted/5 p-4 mt-2 max-h-[400px] overflow-y-auto shadow-inner">
-            <p className="text-xs text-muted-foreground/90 whitespace-pre-wrap leading-relaxed">
-              {description}
-            </p>
+            {renderMarkdownInJobDescriptions ? (
+              <JobDescriptionMarkdown description={description} />
+            ) : (
+              <p className="text-xs text-muted-foreground/90 whitespace-pre-wrap leading-relaxed">
+                {description}
+              </p>
+            )}
           </div>
         </CollapsibleSection>
       </div>
@@ -133,20 +146,6 @@ export const DecideMode: React.FC<DecideModeProps> = ({
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-
-        {jobLink ? (
-          <div className="flex justify-center">
-            <a
-              href={jobLink}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground hover:text-foreground transition-colors"
-            >
-              <ExternalLink className="h-3.5 w-3.5" />
-              Original Job Listing
-            </a>
-          </div>
-        ) : null}
       </div>
     </div>
   );
