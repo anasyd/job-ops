@@ -180,7 +180,10 @@ export function createBasicAuthGuard() {
     // OPTIONS is always exempt for CORS preflight.
     if (method.toUpperCase() === "OPTIONS") return false;
 
-    // Allow public read access to tracer links
+    // Analytics contains PII (IPs, click tracking) — always require auth.
+    if (path.startsWith("/api/tracer-links/analytics")) return true;
+
+    // Allow public read access to other tracer link routes.
     if (path.startsWith("/api/tracer-links")) {
       return !["GET", "HEAD"].includes(method.toUpperCase());
     }
@@ -190,7 +193,6 @@ export function createBasicAuthGuard() {
 
     // Non-API routes (SPA, /health, /pdfs, static) remain publicly readable via GET/HEAD.
     return !["GET", "HEAD"].includes(method.toUpperCase());
-
   }
 
   const middleware = (
