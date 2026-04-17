@@ -59,12 +59,13 @@ Incompatible sources are disabled with explanatory tooltips.
 - **Resumes tailored** (`topN`)
 - **Min suitability score**
 - **Max jobs discovered** (run budget cap)
+- `Max jobs discovered` accepts values from `50` to `1000` in the UI.
 - **Search cities** (optional multi-city input; empty by default; required for Glassdoor)
 - **Workplace type** (`Remote`, `Hybrid`, `Onsite`)
 
 Workplace type applies globally to the run across all search terms and locations.
 
-Search cities only applies when you explicitly add one or more cities. Leaving it empty does not add a hidden country-level location filter.
+Search cities only applies when you explicitly add one or more cities. Leaving it empty does not inject a hidden UK fallback or fake city value.
 
 Source behavior differs:
 
