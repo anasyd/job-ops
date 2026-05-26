@@ -141,6 +141,7 @@ jobsDocumentsRouter.post("/:id/pdf", async (req: Request, res: Response) => {
       pdfRegenerating: false,
       pdfFingerprint: null,
       pdfGeneratedAt: new Date().toISOString(),
+      ...(currentJob.status === "discovered" ? { status: "ready" } : {}),
     });
 
     if (!job) {
