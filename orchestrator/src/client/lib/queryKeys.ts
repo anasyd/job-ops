@@ -1,6 +1,10 @@
 import type { JobStatus, PostApplicationProvider } from "@shared/types";
 
 export const queryKeys = {
+  app: {
+    all: ["app"] as const,
+    status: () => [...queryKeys.app.all, "status"] as const,
+  },
   designResume: {
     all: ["design-resume"] as const,
     current: () => [...queryKeys.designResume.all, "current"] as const,
@@ -32,6 +36,10 @@ export const queryKeys = {
   demo: {
     all: ["demo"] as const,
     info: () => [...queryKeys.demo.all, "info"] as const,
+  },
+  onboarding: {
+    all: ["onboarding"] as const,
+    status: () => [...queryKeys.onboarding.all, "status"] as const,
   },
   jobs: {
     all: ["jobs"] as const,

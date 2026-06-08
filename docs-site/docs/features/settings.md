@@ -42,6 +42,7 @@ Settings gives you runtime overrides for the key parts of discovery, scoring, ta
 
 ![Model settings section](/img/features/settings-model-section.png)
 
+- In hosted deployments with platform-managed LLM enabled, this section is hidden because provider, API key, and model selection are managed by the hosted platform.
 - Choose provider (`openrouter`, `lmstudio`, `ollama`, `openai`, `glm`, `gemini`, `gemini_cli`, `codex`)
 - Set provider-specific base URL/API key when required
 - Configure the default model/runtime, plus purpose-specific overrides for:
@@ -52,6 +53,7 @@ Settings gives you runtime overrides for the key parts of discovery, scoring, ta
 - Purpose API keys are stored as secrets. The settings response shows only redacted hints.
 - Provider defaults are applied automatically when the model fields are left blank:
   - `openai` defaults to `gpt-5.4-mini`
+  - `codex` defaults to `gpt-5.4-mini`
   - `glm` defaults to `glm-5.1`
   - `gemini` and `gemini_cli` default to `google/gemini-3-flash-preview`
 - The settings page shows provider-aware model pickers for:

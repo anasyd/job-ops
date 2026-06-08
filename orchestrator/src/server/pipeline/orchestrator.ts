@@ -351,6 +351,7 @@ export async function runPipeline(
         const retryConfig = { ...mergedConfig, sources: challengedSources };
         const retryResult = await discoverJobsStep({
           mergedConfig: retryConfig,
+          includeWatchlist: false,
           shouldCancel: () =>
             getPipelineState(tenantId).cancelRequestedAt !== null,
         });
@@ -386,7 +387,9 @@ export async function runPipeline(
 
       ensureNotCancelled(tenantId);
       jobsDiscovered = discoveredJobs.length;
-      const { created, skipped } = await importJobsStep({ discoveredJobs });
+      const { created, skipped, fuzzyMerged } = await importJobsStep({
+        discoveredJobs,
+      });
 
       await persistResultSummary({ stage: "import" });
       await pipelineRepo.updatePipelineRun(pipelineRun.id, {
@@ -477,6 +480,7 @@ export async function runPipeline(
       progressHelpers.complete(jobsDiscovered, processedCount);
       pipelineLogger.info("Pipeline run completed", {
         jobsDiscovered,
+        jobsFuzzyMerged: fuzzyMerged,
         jobsImported: created,
         jobsSkipped: skipped,
         jobsProcessed: processedCount,

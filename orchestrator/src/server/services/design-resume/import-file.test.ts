@@ -16,9 +16,20 @@ const requestContext = vi.hoisted(() => ({
   getRequestId: vi.fn(() => "req-123"),
 }));
 
+const { codexCallJsonMock, MockCodexClientClass } = vi.hoisted(() => {
+  const callJson = vi.fn();
+  class MockCodexClientClass {
+    callJson = callJson;
+  }
+  return { codexCallJsonMock: callJson, MockCodexClientClass };
+});
+
 vi.mock("@server/services/modelSelection", () => modelSelection);
 vi.mock("./index", () => designResumeService);
 vi.mock("@server/infra/request-context", () => requestContext);
+vi.mock("@server/services/llm/codex/client", () => ({
+  CodexClient: MockCodexClientClass,
+}));
 vi.mock("pdf-parse", () => ({
   default: vi.fn(),
 }));
@@ -89,6 +100,10 @@ describe("importDesignResumeFromFile", () => {
     vi.mocked(pdfParse).mockResolvedValue(
       makePdfParseResult("Taylor Quinn\nSenior Engineer"),
     );
+    codexCallJsonMock.mockResolvedValue({
+      text: JSON.stringify(buildDefaultReactiveResumeDocument()),
+      turnId: "turn-1",
+    });
     modelSelection.resolveLlmRuntimeSettings.mockResolvedValue({
       provider: "openai",
       model: "gpt-4.1",
@@ -887,7 +902,7 @@ describe("importDesignResumeFromFile", () => {
     ).not.toHaveBeenCalled();
   });
 
-  it("returns a capability error when the configured provider is unsupported", async () => {
+  it("extracts PDF text locally and imports resumes with Codex", async () => {
     modelSelection.resolveLlmRuntimeSettings.mockResolvedValueOnce({
       provider: "codex",
       model: "gpt-5",
@@ -895,16 +910,44 @@ describe("importDesignResumeFromFile", () => {
       apiKey: null,
     });
 
-    await expect(
-      importDesignResumeFromFile({
-        fileName: "resume.pdf",
-        mediaType: "application/pdf",
-        dataBase64: Buffer.from("pdf-data").toString("base64"),
-      }),
-    ).rejects.toMatchObject({
-      status: 503,
-      message: expect.stringContaining("Resume file import is not available"),
+    await importDesignResumeFromFile({
+      fileName: "resume.pdf",
+      mediaType: "application/pdf",
+      dataBase64: Buffer.from("pdf-data").toString("base64"),
     });
+
+    expect(codexCallJsonMock).toHaveBeenCalledOnce();
+    expect(codexCallJsonMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        jsonSchema: expect.objectContaining({
+          name: "codex_output_schema",
+          schema: expect.objectContaining({
+            additionalProperties: false,
+            properties: expect.objectContaining({
+              basics: expect.objectContaining({
+                additionalProperties: false,
+              }),
+              sections: expect.objectContaining({
+                additionalProperties: false,
+              }),
+            }),
+            required: [
+              "picture",
+              "basics",
+              "summary",
+              "sections",
+              "customSections",
+              "metadata",
+            ],
+          }),
+        }),
+      }),
+    );
+    expect(
+      codexCallJsonMock.mock.calls[0]?.[0].messages[1]?.content,
+    ).not.toContain('property named "json"');
+    expect(pdfParse).toHaveBeenCalledOnce();
+    expect(fetch).not.toHaveBeenCalled();
   });
 
   it("does not misclassify unrelated upstream errors as file capability failures", async () => {

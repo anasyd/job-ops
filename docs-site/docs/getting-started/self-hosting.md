@@ -45,17 +45,41 @@ Open:
 
 - **Dashboard**: `http://localhost:3005`
 
-The onboarding wizard helps you validate and save:
+The onboarding launch console helps you validate and save:
 
-1. **LLM Provider**: OpenRouter by default (or OpenAI/GLM/Gemini/local URL).
-2. **Import your current resume**: Either upload a PDF/DOCX into JobOps or choose the Reactive Resume option and connect with your v5 API key.
-3. **Search terms**: JobOps generates a first list of job-title search terms from your selected resume. Edit or regenerate them before saving.
+1. **Workspace account**: On brand-new installs, create the first username/password account directly in onboarding. This first account becomes the system admin and owns the initial private workspace.
+2. **LLM Provider**: OpenRouter by default (or OpenAI/GLM/Gemini/local URL).
+3. **Import your current resume**: Either upload a PDF/DOCX into JobOps or choose the Reactive Resume option and connect with your v5 API key.
+4. **First run readiness**: JobOps prepares search terms from the loaded resume automatically before the first pipeline run. You can still edit advanced search controls later from the run modal or Settings.
 
-Create the first username/password account from the sign-in screen before opening private APIs. This first account becomes the system admin and owns the initial private workspace.
-
-Settings and user accounts are saved to the local database. If you are upgrading an older single-user install, JobOps migrates existing rows into one default private workspace. When `BASIC_AUTH_USER` and `BASIC_AUTH_PASSWORD` are present during that migration, they seed the first system admin account; otherwise the sign-in screen requires first-run setup before private APIs are usable.
+Settings and user accounts are saved to the local database. If you are upgrading an older single-user install, JobOps migrates existing rows into one default private workspace. When `BASIC_AUTH_USER` and `BASIC_AUTH_PASSWORD` are present during that migration, they seed the first system admin account; otherwise onboarding requires first-run account setup before private APIs are usable.
 
 System admins can create more users from **Settings → Environment & Workspaces**. Each created user receives a separate private workspace with isolated jobs, settings, resumes, integrations, PDFs, pipeline runs, chat, analytics, and post-application data.
+
+## Hosted single-tenant mode
+
+JobOps defaults to local/self-hosted mode when hosted flags are unset. Hosted mode is an env-gated deployment mode for running one configured tenant with multiple users in that tenant.
+
+To enable hosted mode, set:
+
+```bash
+JOBOPS_APP_MODE=hosted
+JOBOPS_HOSTED_TENANT_ID=tenant_hosted
+```
+
+`JOBOPS_HOSTED_TENANT_ID` is required in hosted mode. JobOps fails startup if `JOBOPS_APP_MODE=hosted` is set without a hosted tenant ID. The tenant must already exist in the database before hosted signup can create users for it; hosted signup does not create tenants.
+
+Optional hosted capabilities default to disabled:
+
+```bash
+JOBOPS_HOSTED_SIGNUPS_ENABLED=false
+JOBOPS_HOSTED_PLATFORM_LLM_ENABLED=false
+JOBOPS_HOSTED_QUOTAS_ENABLED=false
+```
+
+These flags only affect hosted mode. Leaving `JOBOPS_APP_MODE` unset keeps the current first-run setup, private-workspace user creation, settings, and local behavior unchanged.
+
+When hosted mode is active, first-run setup is disabled. Hosted users must be created through hosted signup when `JOBOPS_HOSTED_SIGNUPS_ENABLED=true`, or by a later tenant-owner/admin user-management flow. Hosted signup appears on `/sign-in` as a **Create account** tab only when hosted mode and hosted signups are both enabled.
 
 ## Codex sign-in
 
