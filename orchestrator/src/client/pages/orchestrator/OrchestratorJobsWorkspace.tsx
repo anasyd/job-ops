@@ -2,6 +2,7 @@ import type { VirtualListHandle } from "@client/lib/virtual-list";
 import type { Job, JobListItem, JobSource, JobStatus } from "@shared/types.js";
 import type React from "react";
 import type {
+  EmploymentType,
   FilterTab,
   JobDateFilter,
   JobSort,
@@ -36,6 +37,9 @@ interface OrchestratorJobsWorkspaceProps {
   sourceFilter: JobSource | "all";
   sponsorFilter: SponsorFilter;
   salaryFilter: SalaryFilter;
+  postedWithinDays: number | null;
+  employmentTypes: EmploymentType[];
+  locationFilter: string;
   dateFilter: JobDateFilter;
   sourcesWithJobs: JobSource[];
   sort: JobSort;
@@ -52,6 +56,9 @@ interface OrchestratorJobsWorkspaceProps {
   onSourceFilterChange: (value: JobSource | "all") => void;
   onSponsorFilterChange: (value: SponsorFilter) => void;
   onSalaryFilterChange: (value: SalaryFilter) => void;
+  onPostedWithinChange: (value: number | null) => void;
+  onEmploymentTypesChange: (value: EmploymentType[]) => void;
+  onLocationFilterChange: (value: string) => void;
   onDateFilterChange: (value: JobDateFilter) => void;
   onSortChange: (sort: JobSort) => void;
   onResetFilters: () => void;
@@ -82,6 +89,9 @@ export const OrchestratorJobsWorkspace: React.FC<
   sourceFilter,
   sponsorFilter,
   salaryFilter,
+  postedWithinDays,
+  employmentTypes,
+  locationFilter,
   dateFilter,
   sourcesWithJobs,
   sort,
@@ -98,6 +108,9 @@ export const OrchestratorJobsWorkspace: React.FC<
   onSourceFilterChange,
   onSponsorFilterChange,
   onSalaryFilterChange,
+  onPostedWithinChange,
+  onEmploymentTypesChange,
+  onLocationFilterChange,
   onDateFilterChange,
   onSortChange,
   onResetFilters,
@@ -132,6 +145,12 @@ export const OrchestratorJobsWorkspace: React.FC<
         onSponsorFilterChange={onSponsorFilterChange}
         salaryFilter={salaryFilter}
         onSalaryFilterChange={onSalaryFilterChange}
+        postedWithinDays={postedWithinDays}
+        onPostedWithinChange={onPostedWithinChange}
+        employmentTypes={employmentTypes}
+        onEmploymentTypesChange={onEmploymentTypesChange}
+        locationFilter={locationFilter}
+        onLocationFilterChange={onLocationFilterChange}
         dateFilter={dateFilter}
         onDateFilterChange={onDateFilterChange}
         sourcesWithJobs={sourcesWithJobs}

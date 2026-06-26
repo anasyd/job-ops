@@ -69,6 +69,30 @@ describe("LlmService provider normalization", () => {
     expect(zhipu.getProvider()).toBe("glm");
   });
 
+  it("supports Anthropic provider normalization and Claude alias", () => {
+    const anthropic = new LlmService({
+      provider: "anthropic",
+    });
+    const claude = new LlmService({
+      provider: "claude",
+    });
+
+    expect(anthropic.getProvider()).toBe("anthropic");
+    expect(anthropic.getBaseUrl()).toBe("https://api.anthropic.com");
+    expect(claude.getProvider()).toBe("anthropic");
+    expect(claude.getBaseUrl()).toBe("https://api.anthropic.com");
+  });
+
+  it("ignores stale configured base URLs for native Anthropic", () => {
+    const llm = new LlmService({
+      provider: "anthropic",
+      baseUrl: "https://openrouter.ai",
+    });
+
+    expect(llm.getProvider()).toBe("anthropic");
+    expect(llm.getBaseUrl()).toBe("https://api.anthropic.com");
+  });
+
   it("retries codex JSON parsing failures and succeeds on a later attempt", async () => {
     const codexCallSpy = vi
       .spyOn(CodexClient.prototype, "callJson")

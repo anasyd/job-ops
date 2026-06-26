@@ -49,15 +49,17 @@ export const OrchestratorJobWorkspaceContainer: React.FC<
   openRunMode,
 }) => {
   const jobListHandleRef = useRef<VirtualListHandle | null>(null);
-  const activeJobs = useFilteredJobs(
-    jobs,
-    navigation.activeTab,
-    filters.dateFilter,
-    filters.sourceFilter,
-    filters.sponsorFilter,
-    filters.salaryFilter,
-    filters.sort,
-  );
+  const activeJobs = useFilteredJobs(jobs, {
+    activeTab: navigation.activeTab,
+    dateFilter: filters.dateFilter,
+    sourceFilter: filters.sourceFilter,
+    sponsorFilter: filters.sponsorFilter,
+    salaryFilter: filters.salaryFilter,
+    postedWithinDays: filters.postedWithinDays,
+    employmentTypes: filters.employmentTypes,
+    location: filters.location,
+    sort: filters.sort,
+  });
   const counts = useMemo(() => getJobCounts(jobs), [jobs]);
   const sourcesWithJobs = useMemo(() => getSourcesWithJobs(jobs), [jobs]);
   const handleTabChange = useCallback(
@@ -217,6 +219,9 @@ export const OrchestratorJobWorkspaceContainer: React.FC<
           sourceFilter={filters.sourceFilter}
           sponsorFilter={filters.sponsorFilter}
           salaryFilter={filters.salaryFilter}
+          postedWithinDays={filters.postedWithinDays}
+          employmentTypes={filters.employmentTypes}
+          locationFilter={filters.location}
           dateFilter={filters.dateFilter}
           sourcesWithJobs={sourcesWithJobs}
           sort={filters.sort}
@@ -233,6 +238,9 @@ export const OrchestratorJobWorkspaceContainer: React.FC<
           onSourceFilterChange={filters.setSourceFilter}
           onSponsorFilterChange={filters.setSponsorFilter}
           onSalaryFilterChange={filters.setSalaryFilter}
+          onPostedWithinChange={filters.setPostedWithinDays}
+          onEmploymentTypesChange={filters.setEmploymentTypes}
+          onLocationFilterChange={filters.setLocation}
           onDateFilterChange={filters.setDateFilter}
           onSortChange={filters.setSort}
           onResetFilters={filters.resetFilters}
