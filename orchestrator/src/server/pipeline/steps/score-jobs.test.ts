@@ -99,6 +99,21 @@ describe("scoreJobsStep auto-skip behavior", () => {
     );
   });
 
+  it("uses the selected run country for visa sponsor matching", async () => {
+    const visaSponsors = await import("@server/services/visa-sponsors/index");
+
+    await scoreJobsStep({
+      profile: {},
+      visaSponsorCountryKey: "united kingdom",
+    });
+
+    expect(visaSponsors.searchSponsors).toHaveBeenCalledWith("Acme Corp", {
+      limit: 10,
+      minScore: 50,
+      countryKey: "united kingdom",
+    });
+  });
+
   it("passes per-run scoring instructions to the scorer", async () => {
     const scorer = await import("@server/services/scorer");
 
@@ -141,6 +156,30 @@ describe("scoreJobsStep auto-skip behavior", () => {
         jobBrief:
           '{"role_summary":"Build tools","they_want":[],"specifics":[],"company_offers":[],"practical_details":[],"missing_or_unclear":[],"repeated_signals":[]}',
       }),
+    );
+  });
+
+  it.each([
+    { score: 90, exceptional: 0 },
+    { score: 91, exceptional: 1 },
+  ])("reports $exceptional exceptional matches for a score of $score", async ({
+    score,
+    exceptional,
+  }) => {
+    const scorer = await import("@server/services/scorer");
+    const { progressHelpers } = await import("../progress");
+    vi.mocked(scorer.scoreJobSuitability).mockResolvedValue({
+      score,
+      reason: "Test score",
+    });
+
+    await scoreJobsStep({ profile: {} });
+
+    expect(progressHelpers.scoringJob).toHaveBeenCalledWith(
+      1,
+      1,
+      expect.objectContaining({ id: "job-1" }),
+      exceptional,
     );
   });
 
@@ -264,6 +303,16 @@ describe("scoreJobsStep auto-skip behavior", () => {
     expect(result.scoredJobs).toHaveLength(2);
     expect(vi.mocked(jobsRepo.updateJob)).toHaveBeenCalledTimes(2);
     expect(vi.mocked(progressHelpers.scoringJob)).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(progressHelpers.scoringJob)).toHaveBeenCalledWith(
+      1,
+      2,
+      {
+        id: expect.any(String),
+        title: expect.any(String),
+        employer: expect.any(String),
+      },
+      0,
+    );
     expect(vi.mocked(progressHelpers.scoringComplete)).toHaveBeenCalledWith(2);
   });
 
